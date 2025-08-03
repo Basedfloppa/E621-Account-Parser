@@ -10,7 +10,7 @@ mod home_components;
 
 use home_components::*;
 
-const API_BASE: &str = "http://localhost:8000";
+const API_BASE: &str = "http://localhost:8080";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TagCount {
@@ -23,6 +23,7 @@ pub struct TagCount {
 pub struct UserInfo {
     pub id: i64,
     pub name: String,
+    pub api_key: String
 }
 
 #[function_component(HomePage)]
@@ -73,6 +74,7 @@ pub fn home_page() -> Html {
                     found_user.set(Some(UserInfo {
                         id: account.id,
                         name: account.name.clone(),
+                        api_key: account.api_key.clone()
                     }));
                     user_query.set(account.name.clone());
                 }

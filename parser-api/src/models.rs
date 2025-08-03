@@ -38,6 +38,14 @@ pub struct FullUser {
     pub profile_artinfo: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct TruncatedAccount {
+    pub id: i32,
+    pub name: String,
+    pub api_key: String
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FullCurrentUser {
     pub id: i32,

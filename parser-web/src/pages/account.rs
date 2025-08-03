@@ -87,7 +87,7 @@ pub fn account_creator() -> Html {
             
             // Make API request with reqwasm
             wasm_bindgen_futures::spawn_local(async move {
-                let response = Request::post("http://localhost:8000/account")
+                let response = Request::post("http://localhost:8080/account")
                     .header("Content-Type", "application/json")
                     .body(serde_json::to_string(&account).unwrap())
                     .send()

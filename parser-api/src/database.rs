@@ -5,7 +5,7 @@ use rocket::{
 use rusqlite::{Connection, Result, params};
 use serde::Serialize;
 
-use crate::models::TruncatedPost;
+use crate::models::{TruncatedAccount, TruncatedPost};
 
 pub struct DbInit;
 
@@ -52,7 +52,7 @@ fn ensure_sqlite() -> Result<()> {
         UNIQUE(name, group_type)
     );
     CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY);
-    CREATE TABLE IF NOT EXISTS account (
+    CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         api_key TEXT NOT NULL
@@ -64,38 +64,35 @@ fn ensure_sqlite() -> Result<()> {
         FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
         FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
     );
-    CREATE TABLE IF NOT EXISTS account_post (
+    CREATE TABLE IF NOT EXISTS accounts_post (
         post_id INTEGER NOT NULL,
         account_id INTEGER NOT NULL,
         PRIMARY KEY(post_id, account_id),
         FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
-        FOREIGN KEY(account_id) REFERENCES account(id) ON DELETE CASCADE
+        FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
     ",
     )?;
 
-    save_account(658288, "zorolin", "wqkzSZMU4XQkRFgcysFiFuWi")
-        .map_err(|e| format!("Failed to save account: {}", e));
-
     Ok(())
 }
 
-pub fn save_account(account_id: i64, name: &str, api_key: &str) -> Result<()> {
+pub fn save_account(account_id: i32, name: &str, api_key: &str) -> Result<()> {
     open_db()?.execute(
-        "INSERT OR IGNORE INTO account (id, name, api_key) VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO accounts (id, name, api_key) VALUES (?1, ?2, ?3)",
         params![account_id, name, api_key],
     )?;
     Ok(())
 }
 
-pub fn save_posts(posts: &[TruncatedPost], account_id: i64) -> Result<()> {
+pub fn save_posts(posts: &[TruncatedPost], account_id: i32) -> Result<()> {
     let mut connection = open_db()?;
     let tx = connection.transaction()?;
 
     {
         let mut insert_post = tx.prepare_cached("INSERT OR IGNORE INTO posts (id) VALUES (?1);")?;
         let mut insert_account = tx.prepare_cached(
-            "INSERT OR IGNORE INTO account_post (account_id, post_id) VALUES (?1, ?2);",
+            "INSERT OR IGNORE INTO accounts_post (account_id, post_id) VALUES (?1, ?2);",
         )?;
 
         for post in posts {
@@ -149,28 +146,73 @@ pub fn save_post_tags(post: &TruncatedPost) -> Result<()> {
     Ok(())
 }
 
-pub fn get_tag_counts(account_id: i64) -> rusqlite::Result<Vec<TagCount>> {
+pub fn get_tag_counts(account_id: i32) -> rusqlite::Result<Vec<TagCount>> {
     let conn = open_db()?;
     let mut stmt = conn.prepare(
         r#"
         SELECT t.name, t.group_type, COUNT(*) as count
         FROM tags t
         INNER JOIN tags_posts tp ON t.id = tp.tag_id
-        INNER JOIN account_post ap ON tp.post_id = ap.post_id
+        INNER JOIN accounts_post ap ON tp.post_id = ap.post_id
         WHERE ap.account_id = ?
         GROUP BY t.name, t.group_type
         ORDER BY count DESC
         "#,
     )?;
 
-    let counts = stmt.query_map([account_id], |row| {
-        Ok(TagCount {
-            name: row.get(0)?,
-            group_type: row.get(1)?,
-            count: row.get(2)?,
-        })
-    })?
-    .collect::<Result<Vec<_>, _>>()?;
+    let counts = stmt
+        .query_map([account_id], |row| {
+            Ok(TagCount {
+                name: row.get(0)?,
+                group_type: row.get(1)?,
+                count: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(counts)
+}
+
+pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount> {
+    let conn = open_db()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT a.id, a.name, a.api_key
+        FROM accounts a
+        WHERE a.name = ?
+        "#,
+    )?;
+    let accounts = stmt
+        .query_map([name], |row| {
+            Ok(TruncatedAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                api_key: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(accounts[0].clone())
+}
+
+pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount> {
+    let conn = open_db()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT a.id, a.name, a.api_key
+        FROM accounts a
+        WHERE a.id = ?
+        "#,
+    )?;
+    let accounts = stmt
+        .query_map([id], |row| {
+            Ok(TruncatedAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                api_key: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(accounts[0].clone())
 }

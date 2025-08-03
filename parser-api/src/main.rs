@@ -9,35 +9,33 @@ use rusqlite::Result;
 use cors::*;
 use database::*;
 
-use crate::models::{FavoritesApiResponse, TruncatedPost, UserApiResponse};
+use crate::models::{FavoritesApiResponse, TruncatedAccount, TruncatedPost, UserApiResponse};
 use crate::rocket::serde::json;
 
 mod cors;
 mod database;
 mod models;
-mod utils;
 
-static USER_ID: i32 = 658288;
-static USER_NAME: &str = "zorolin";
-static API_KEY: &str = "wqkzSZMU4XQkRFgcysFiFuWi";
 static LIMIT: i32 = 320;
 static BASE_URL: &str = "https://e621.net/";
 
-#[get("/get")]
-async fn get_favorites() -> Result<String, std::io::Error> {
+#[post("/process/<account_id>")]
+async fn process_posts(account_id: i32) -> Result<String, std::io::Error> {
     let client = reqwest::Client::builder()
         .user_agent("account scraper (by zorolin)")
         .build()
         .map_err(|e| format!("Failed to build client: {}", e))
         .unwrap();
 
+    let account = get_account_id(account_id).unwrap();
+
     let user_response = client
         .get(format!(
             "{url}users/{id}.json",
             url = BASE_URL,
-            id = USER_ID
+            id = account_id
         ))
-        .basic_auth(USER_NAME, Some(API_KEY))
+        .basic_auth(account.name.clone(), Some(account.api_key.clone()))
         .send()
         .await
         .unwrap();
@@ -54,18 +52,18 @@ async fn get_favorites() -> Result<String, std::io::Error> {
             url = BASE_URL,
             limit = LIMIT,
             page = i,
-            username = USER_NAME
+            username = account.name
         );
 
         let post_response = client
             .get(format!(
                 "{url}favorites.json?user_id={id}&limit={limit}&page={page}",
                 url = BASE_URL,
-                id = USER_ID,
+                id = account.id,
                 limit = LIMIT,
                 page = i
             ))
-            .basic_auth(USER_NAME, Some(API_KEY))
+            .basic_auth(account.name.clone(), Some(account.api_key.clone()))
             .send()
             .await
             .unwrap();
@@ -76,7 +74,7 @@ async fn get_favorites() -> Result<String, std::io::Error> {
 
         info!("{} post found", parsed.len());
 
-        save_posts(&parsed, USER_ID as i64)
+        save_posts(&parsed, account.id)
             .map_err(|e| format!("Failed to save posts: {}", e))
             .unwrap();
 
@@ -91,7 +89,7 @@ async fn get_favorites() -> Result<String, std::io::Error> {
 }
 
 #[get("/account/<account_id>/tag_counts")]
-fn get_account_tag_counts(account_id: i64) -> Result<Json<Vec<TagCount>>, String> {
+fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String> {
     match get_tag_counts(account_id) {
         Ok(counts) => Ok(Json(counts.to_vec())),
         Err(e) => {
@@ -102,10 +100,52 @@ fn get_account_tag_counts(account_id: i64) -> Result<Json<Vec<TagCount>>, String
     }
 }
 
+#[get("/user/name/<name>")]
+fn get_account_name(name: String) -> Result<Json<TruncatedAccount>, String> {
+    match get_account_by_name(name) {
+        Ok(account) => Ok(Json(account)),
+        Err(e) => {
+            let error_msg = format!("Failed to get account: {}", e);
+            eprintln!("{}", error_msg);
+            Err(error_msg)
+        }
+    }
+}
+
+#[get("/user/id/<id>")]
+fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
+    match get_account_by_id(id) {
+        Ok(account) => Ok(Json(account)),
+        Err(e) => {
+            let error_msg = format!("Failed to get account: {}", e);
+            eprintln!("{}", error_msg);
+            Err(error_msg)
+        }
+    }
+}
+
+#[post("/account", data="<account>")]
+fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
+    match save_account(account.id, &account.name, &account.api_key) {
+        Ok(account) => { Ok(account) },
+        Err(e) => {
+            let error_msg = format!("Failed to get account: {}", e);
+            eprintln!("{}", error_msg);
+            Err(error_msg)
+        }        
+    }
+}
+
 #[launch]
 async fn rocket() -> _ {
     rocket::build()
-        .mount("/", routes![get_favorites, get_account_tag_counts])
+        .mount("/", routes![
+            process_posts, 
+            get_account_tag_counts,
+            get_account_id,
+            get_account_name,
+            create_account
+            ])
         .attach(CORS)
         .attach(DbInit)
 }
