@@ -1,0 +1,176 @@
+use rocket::{
+    Build, Rocket,
+    fairing::{Fairing, Info, Kind},
+};
+use rusqlite::{Connection, Result, params};
+use serde::Serialize;
+
+use crate::models::TruncatedPost;
+
+pub struct DbInit;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct TagCount {
+    pub name: String,
+    pub group_type: String,
+    pub count: i64,
+}
+
+#[rocket::async_trait]
+impl Fairing for DbInit {
+    fn info(&self) -> Info {
+        Info {
+            name: "SQLite DB Initializer",
+            kind: Kind::Ignite,
+        }
+    }
+
+    async fn on_ignite(&self, rocket: Rocket<Build>) -> rocket::fairing::Result {
+        match ensure_sqlite() {
+            Ok(_) => Ok(rocket),
+            Err(e) => {
+                eprintln!("Database initialization failed: {}", e);
+                Err(rocket)
+            }
+        }
+    }
+}
+
+fn open_db() -> Result<Connection> {
+    let connection = Connection::open("database.db")?;
+    connection.execute("PRAGMA foreign_keys = ON;", [])?;
+    Ok(connection)
+}
+
+fn ensure_sqlite() -> Result<()> {
+    open_db()?.execute_batch(
+        "
+    CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        group_type TEXT NOT NULL,
+        UNIQUE(name, group_type)
+    );
+    CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS account (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        api_key TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS tags_posts (
+        tag_id INTEGER NOT NULL,
+        post_id INTEGER NOT NULL,
+        PRIMARY KEY(tag_id, post_id),
+        FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+        FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS account_post (
+        post_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        PRIMARY KEY(post_id, account_id),
+        FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+        FOREIGN KEY(account_id) REFERENCES account(id) ON DELETE CASCADE
+    );
+    ",
+    )?;
+
+    save_account(658288, "zorolin", "wqkzSZMU4XQkRFgcysFiFuWi")
+        .map_err(|e| format!("Failed to save account: {}", e));
+
+    Ok(())
+}
+
+pub fn save_account(account_id: i64, name: &str, api_key: &str) -> Result<()> {
+    open_db()?.execute(
+        "INSERT OR IGNORE INTO account (id, name, api_key) VALUES (?1, ?2, ?3)",
+        params![account_id, name, api_key],
+    )?;
+    Ok(())
+}
+
+pub fn save_posts(posts: &[TruncatedPost], account_id: i64) -> Result<()> {
+    let mut connection = open_db()?;
+    let tx = connection.transaction()?;
+
+    {
+        let mut insert_post = tx.prepare_cached("INSERT OR IGNORE INTO posts (id) VALUES (?1);")?;
+        let mut insert_account = tx.prepare_cached(
+            "INSERT OR IGNORE INTO account_post (account_id, post_id) VALUES (?1, ?2);",
+        )?;
+
+        for post in posts {
+            insert_post.execute(params![post.id])?;
+            insert_account.execute(params![account_id, post.id])?;
+        }
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn save_post_tags(post: &TruncatedPost) -> Result<()> {
+    let mut connection = open_db()?;
+    let tx = connection.transaction()?;
+
+    {
+        let mut insert_tag_stmt =
+            tx.prepare_cached("INSERT OR IGNORE INTO tags (name, group_type) VALUES (?1, ?2)")?;
+        let mut select_tag_id_stmt =
+            tx.prepare_cached("SELECT id FROM tags WHERE name = ?1 AND group_type = ?2")?;
+        let mut insert_link_stmt = tx
+            .prepare_cached("INSERT OR IGNORE INTO tags_posts (tag_id, post_id) VALUES (?1, ?2)")?;
+
+        for (group_type, tags) in [
+            ("artist", &post.tags.artist),
+            ("character", &post.tags.character),
+            ("contributor", &post.tags.contributor),
+            ("copyright", &post.tags.copyright),
+            ("general", &post.tags.general),
+            ("invalid", &post.tags.invalid),
+            ("lore", &post.tags.lore),
+            ("meta", &post.tags.meta),
+            ("species", &post.tags.species),
+        ] {
+            for tag in tags {
+                insert_tag_stmt.execute(params![tag, group_type])?;
+
+                let tag_id = select_tag_id_stmt
+                    .query_row(params![tag, group_type], |row| row.get::<usize, i64>(0))
+                    .unwrap_or_else(|_| {
+                        panic!("Tag must exist after insert: {}:{}", group_type, tag)
+                    });
+
+                insert_link_stmt.execute(params![tag_id, post.id])?;
+            }
+        }
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn get_tag_counts(account_id: i64) -> rusqlite::Result<Vec<TagCount>> {
+    let conn = open_db()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT t.name, t.group_type, COUNT(*) as count
+        FROM tags t
+        INNER JOIN tags_posts tp ON t.id = tp.tag_id
+        INNER JOIN account_post ap ON tp.post_id = ap.post_id
+        WHERE ap.account_id = ?
+        GROUP BY t.name, t.group_type
+        ORDER BY count DESC
+        "#,
+    )?;
+
+    let counts = stmt.query_map([account_id], |row| {
+        Ok(TagCount {
+            name: row.get(0)?,
+            group_type: row.get(1)?,
+            count: row.get(2)?,
+        })
+    })?
+    .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(counts)
+}
