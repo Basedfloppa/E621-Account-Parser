@@ -101,8 +101,8 @@ fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String
 }
 
 #[get("/user/name/<name>")]
-fn get_account_name(name: String) -> Result<Json<TruncatedAccount>, String> {
-    match get_account_by_name(name) {
+fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> {
+    match get_account_by_name(name.to_string()) {
         Ok(account) => Ok(Json(account)),
         Err(e) => {
             let error_msg = format!("Failed to get account: {}", e);
