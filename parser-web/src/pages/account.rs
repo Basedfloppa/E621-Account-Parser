@@ -1,14 +1,9 @@
-use yew::prelude::*;
 use reqwasm::http::Request;
-use serde::{Deserialize, Serialize};
-use web_sys::HtmlInputElement;
+use web_sys::{HtmlInputElement, window};
+use serde_json::to_string;
+use yew::prelude::*;
 
-#[derive(Serialize, Deserialize)]
-struct AccountData {
-    id: i64,
-    name: String,
-    api_key: String,
-}
+use crate::pages::UserInfo;
 
 #[function_component(Account)]
 pub fn account_creator() -> Html {
@@ -18,6 +13,20 @@ pub fn account_creator() -> Html {
     let message = use_state(|| String::new());
     let error = use_state(|| false);
     let loading = use_state(|| false);
+
+    let saved_accounts =
+        use_state(
+            || match web_sys::window().and_then(|w| w.local_storage().ok()?) {
+                Some(storage) => match storage.get_item("e621_accounts") {
+                    Ok(Some(accounts_json)) => {
+                        serde_json::from_str::<Vec<UserInfo>>(&accounts_json)
+                            .unwrap_or_else(|_| vec![])
+                    }
+                    _ => vec![],
+                },
+                _ => vec![],
+            },
+        );
 
     let on_id_change = {
         let id = id.clone();
@@ -50,11 +59,13 @@ pub fn account_creator() -> Html {
         let message = message.clone();
         let error = error.clone();
         let loading = loading.clone();
-        
+
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
             loading.set(true);
-            
+
+            let mut acocunt_copy = saved_accounts.clone().to_vec();
+
             // Validate inputs
             if id.is_empty() || name.is_empty() || api_key.is_empty() {
                 message.set("All fields are required".to_string());
@@ -62,7 +73,7 @@ pub fn account_creator() -> Html {
                 loading.set(false);
                 return;
             }
-            
+
             let account_id = match id.parse::<i64>() {
                 Ok(id) => id,
                 Err(_) => {
@@ -72,19 +83,19 @@ pub fn account_creator() -> Html {
                     return;
                 }
             };
-            
+
             // Prepare account data
-            let account = AccountData {
+            let account = UserInfo {
                 id: account_id,
                 name: name.to_string(),
                 api_key: api_key.to_string(),
             };
-            
+
             // Clone state for async closure
             let message = message.clone();
             let error = error.clone();
             let loading = loading.clone();
-            
+
             // Make API request with reqwasm
             wasm_bindgen_futures::spawn_local(async move {
                 let response = Request::post("http://localhost:8080/account")
@@ -92,17 +103,31 @@ pub fn account_creator() -> Html {
                     .body(serde_json::to_string(&account).unwrap())
                     .send()
                     .await;
-                
+
                 loading.set(false);
-                
+
                 match response {
                     Ok(resp) => {
                         if resp.status() >= 200 && resp.status() < 300 {
                             message.set("Account created successfully!".to_string());
+
+                            acocunt_copy.push(account);
+
+                            let _ = window().unwrap()
+                            .local_storage().unwrap().unwrap()
+                            .set_item("e621_accounts", to_string(&acocunt_copy).unwrap().as_str());
+
                             error.set(false);
                         } else {
-                            let error_msg = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                            message.set(format!("Error: {} (Status: {})", error_msg, resp.status()));
+                            let error_msg = resp
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            message.set(format!(
+                                "Error: {} (Status: {})",
+                                error_msg,
+                                resp.status()
+                            ));
                             error.set(true);
                         }
                     }
@@ -144,7 +169,7 @@ pub fn account_creator() -> Html {
                                         disabled={*loading}
                                     />
                                 </div>
-                                
+
                                 <div class="mb-3">
                                     <label for="account-name" class="form-label">{"Username"}</label>
                                     <input
@@ -157,7 +182,7 @@ pub fn account_creator() -> Html {
                                         disabled={*loading}
                                     />
                                 </div>
-                                
+
                                 <div class="mb-3">
                                     <label for="api-key" class="form-label">{"API Key"}</label>
                                     <input
@@ -170,24 +195,24 @@ pub fn account_creator() -> Html {
                                         disabled={*loading}
                                     />
                                 </div>
-                                
-                                <button 
-                                    type="submit" 
+
+                                <button
+                                    type="submit"
                                     class="btn btn-primary w-100"
                                     disabled={*loading}
                                 >
-                                    { if *loading { 
+                                    { if *loading {
                                         html! {
                                             <span>
                                                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                                                 {"Creating..."}
                                             </span>
-                                        } 
-                                    } else { 
-                                        "Create Account".into() 
+                                        }
+                                    } else {
+                                        "Create Account".into()
                                     }}
                                 </button>
-                                
+
                                 <div class={message_class} role="alert">
                                     {&*message}
                                 </div>
