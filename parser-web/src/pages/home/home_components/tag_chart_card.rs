@@ -148,7 +148,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
                     }
                 </ul>
 
-                <div class="chart-container" style="max-height: 80vh; max-width: 100%;">
+                <div class="chart-container" style="max-width: 100%;">
                     <canvas
                         ref={props.canvas_ref.clone()}
                         style="display: block; width: 100%"
@@ -220,7 +220,7 @@ fn draw_chart(canvas: &web_sys::HtmlCanvasElement, tag_counts: &[TagCount]) {
     }
 
     let left_padding = max_left_text_width + 20.0;
-    let right_padding = max_right_text_width + 20.0;
+    let right_padding = max_right_text_width + 40.0;
 
     let chart_width = logical_width - left_padding - right_padding;
     if logical_width == 0.0 || tag_counts.is_empty() {
