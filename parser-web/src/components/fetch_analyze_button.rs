@@ -1,5 +1,5 @@
 use reqwasm::http::Request;
-use yew::{Callback, Html, Properties, UseStateHandle, function_component, html};
+use yew::{function_component, html, use_state, Callback, Html, MouseEvent, Properties, UseStateHandle};
 
 use crate::pages::{TagCount, UserInfo};
 
@@ -14,53 +14,13 @@ pub struct AnalyzeButtonProps {
 
 #[function_component(FetchAnalyzeButton)]
 pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
-    let analyze_tags = {
-        let api_base = props.api_base.clone();
-        let found_user = props.found_user.clone();
-        let is_loading = props.is_loading.clone();
-        let error = props.error.clone();
-
-        Callback::from(move |_| {
-            let api_base = api_base.clone();
-            if found_user.is_none() {
-                error.set(Some("No user selected".to_string()));
-                return;
-            }
-
-            let user_id = found_user.as_ref().unwrap().id;
-            is_loading.set(true);
-            error.set(None);
-
-            let is_loading = is_loading.clone();
-            let error = error.clone();
-
-            wasm_bindgen_futures::spawn_local(async move {
-                match Request::post(&format!("{}/process/{}", &api_base, user_id))
-                    .send()
-                    .await
-                {
-                    Ok(response) => {
-                        if !response.ok() {
-                            let status = response.status();
-                            let text = response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Processing error {}: {}", status, text)));
-                        }
-                    }
-                    Err(e) => {
-                        error.set(Some(format!("Processing error: {}", e)));
-                    }
-                }
-                is_loading.set(false);
-            });
-        })
-    };
+    let is_analyzing = use_state(|| false);
+    let is_fetching = use_state(|| false);
 
     let fetch_tags = {
         let api_base = props.api_base.clone();
         let found_user = props.found_user.clone();
+        let is_fetching = is_fetching.clone();
         let is_loading = props.is_loading.clone();
         let tag_count = props.tag_count.clone();
         let error = props.error.clone();
@@ -74,12 +34,14 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
             }
 
             let user_id = found_user.as_ref().unwrap().id;
-            is_loading.set(true);
-            error.set(None);
-
             let tag_count = tag_count.clone();
+            let is_fetching = is_fetching.clone();
             let is_loading = is_loading.clone();
             let error = error.clone();
+
+            is_fetching.set(true);
+            is_loading.set(true);
+            error.set(None);
 
             wasm_bindgen_futures::spawn_local(async move {
                 match Request::get(&format!("{}/account/{}/tag_counts", &api_base, user_id))
@@ -110,7 +72,66 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                         error.set(Some(format!("Network error: {}", e)));
                     }
                 }
+
+                is_fetching.set(false);
                 is_loading.set(false);
+            });
+        })
+    };
+
+    let analyze_tags = {
+        let fetch_tags = fetch_tags.clone();
+        let api_base = props.api_base.clone();
+        let found_user = props.found_user.clone();
+        let is_analyzing = is_analyzing.clone();
+        let is_loading = props.is_loading.clone();
+        let error = props.error.clone();
+
+        Callback::from(move |_| {
+            let fetch_tags = fetch_tags.clone();
+            let api_base = api_base.clone();
+
+            if found_user.is_none() {
+                error.set(Some("No user selected".to_string()));
+                return;
+            }
+
+            let user_id = found_user.as_ref().unwrap().id;
+            let is_analyzing = is_analyzing.clone();
+            let is_loading = is_loading.clone();
+            let error = error.clone();
+
+            is_analyzing.set(true);
+            is_loading.set(true);
+            error.set(None);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                match Request::post(&format!("{}/process/{}", &api_base, user_id))
+                    .send()
+                    .await
+                {
+                    Ok(response) => {
+                        if !response.ok() {
+                            let status = response.status();
+                            let text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".into());
+                            error.set(Some(format!("Processing error {}: {}", status, text)));
+                        }
+                    }
+                    Err(e) => {
+                        error.set(Some(format!("Processing error: {}", e)));
+                    }
+                }
+                is_analyzing.set(false);
+                is_loading.set(false);
+
+                if let Ok(synthetic_event) = MouseEvent::new("click") {
+                    fetch_tags.emit(MouseEvent::from(synthetic_event));
+                } else {
+                    error.set(Some("Failed to trigger fetch after analysis".to_string()));
+                }
             });
         })
     };
@@ -122,7 +143,7 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                 onclick={analyze_tags}
                 disabled={*props.is_loading || props.found_user.is_none()}
             >
-                {if *props.is_loading {
+                {if *is_analyzing {
                     html! {
                         <span>
                             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -139,7 +160,7 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                 onclick={fetch_tags}
                 disabled={*props.is_loading || props.found_user.is_none()}
             >
-                {if *props.is_loading {
+                {if *is_fetching {
                     html! {
                         <span>
                             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
