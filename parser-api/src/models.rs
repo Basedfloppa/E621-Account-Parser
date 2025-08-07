@@ -1,6 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Clone)]
+pub struct TagCount {
+    pub name: String,
+    pub group_type: String,
+    pub count: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UserApiResponse {
@@ -43,7 +50,7 @@ pub struct FullUser {
 pub struct TruncatedAccount {
     pub id: i32,
     pub name: String,
-    pub api_key: String
+    pub api_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,11 +121,11 @@ pub struct FullCurrentUser {
 }
 
 #[derive(Deserialize)]
-pub struct FavoritesApiResponse {
+pub struct PostsApiResponse {
     pub posts: Vec<Post>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Post {
     pub id: i64,
     pub created_at: DateTime<Utc>,
@@ -145,7 +152,7 @@ pub struct Post {
     pub duration: Option<f64>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct TruncatedPost {
     pub id: i64,
     pub tags: Tags,
@@ -160,7 +167,7 @@ impl From<&Post> for TruncatedPost {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct FileInfo {
     pub width: i64,
     pub height: i64,
@@ -170,14 +177,14 @@ pub struct FileInfo {
     pub url: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Preview {
     pub width: i64,
     pub height: i64,
     pub url: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Sample {
     pub has: Option<bool>,
     pub height: Option<i64>,
@@ -188,7 +195,7 @@ pub struct Sample {
     pub samples: Option<Samples>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct PostSampleAlternate {
     pub fps: f32,
     pub codec: Option<String>,
@@ -198,19 +205,19 @@ pub struct PostSampleAlternate {
     pub url: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Alternates {
     pub has: Option<bool>,
     pub original: Option<PostSampleAlternate>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Variants {
     pub webm: PostSampleAlternate,
     pub mp4: PostSampleAlternate,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Samples {
     #[serde(rename = "480p")]
     pub p480: PostSampleAlternate,
@@ -218,14 +225,14 @@ pub struct Samples {
     pub p720: PostSampleAlternate,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Score {
     pub up: i64,
     pub down: i64,
     pub total: i64,
 }
 
-#[derive(Deserialize, Clone, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Tags {
     pub general: Vec<String>,
     pub artist: Vec<String>,
@@ -238,7 +245,7 @@ pub struct Tags {
     pub contributor: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Flags {
     pub pending: bool,
     pub flagged: bool,
@@ -248,7 +255,7 @@ pub struct Flags {
     pub deleted: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Rating {
     S,
@@ -256,7 +263,7 @@ pub enum Rating {
     E,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Relationships {
     pub parent_id: Option<i64>,
     pub has_children: bool,

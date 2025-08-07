@@ -3,18 +3,10 @@ use rocket::{
     fairing::{Fairing, Info, Kind},
 };
 use rusqlite::{Connection, Result, params};
-use serde::Serialize;
 
-use crate::models::{TruncatedAccount, TruncatedPost};
+use crate::models::{TruncatedAccount, TruncatedPost, TagCount};
 
 pub struct DbInit;
-
-#[derive(Debug, Serialize, Clone)]
-pub struct TagCount {
-    pub name: String,
-    pub group_type: String,
-    pub count: i64,
-}
 
 #[rocket::async_trait]
 impl Fairing for DbInit {

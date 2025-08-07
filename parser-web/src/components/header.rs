@@ -17,6 +17,9 @@ pub fn header() -> Html {
             <li class="nav-item">
                 <a class="nav-link" href="/account">{"Account"}</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="/feed">{"Feed"}</a>
+            </li>
         </ul>
         <ul class="col navbar-nav justify-content-end">
             <li>
