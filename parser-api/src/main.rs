@@ -9,8 +9,8 @@ use cors::*;
 use db::*;
 use models::*;
 
-use std::io::{Error, ErrorKind};
 use rocket::fs::{FileServer, relative};
+use std::io::{Error, ErrorKind};
 
 use crate::rocket::serde::json;
 
@@ -86,9 +86,15 @@ fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
 }
 
 #[post("/account", data = "<account>")]
-fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
-    match save_account(account.id, &account.name, &account.api_key) {
-        Ok(account) => Ok(account),
+async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
+    let user = api::get_account(&account).await;
+    let blacklisted_tags = match user {
+        UserApiResponse::FullCurrentUser(u) => u.blacklisted_tags,
+        UserApiResponse::FullUser(u) => "".to_string(),
+    };
+
+    match save_account(account.id, &account.name, &account.api_key, &blacklisted_tags) {
+        Ok(_) => Ok(()),
         Err(e) => {
             let error_msg = format!("Failed to get account: {}", e);
             eprintln!("{}", error_msg);
@@ -98,7 +104,10 @@ fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
 }
 
 #[get("/recomendations/<account_id>?<page>")]
-async fn get_recomendations(account_id: i32, page: Option<i32>) -> Result<Json<Vec<Post>>, std::io::Error> {
+async fn get_recomendations(
+    account_id: i32,
+    page: Option<i32>,
+) -> Result<Json<Vec<Post>>, std::io::Error> {
     let tags = match get_tag_counts(account_id) {
         Ok(counts) => counts.to_vec(),
         Err(e) => {
@@ -215,7 +224,6 @@ async fn rocket() -> _ {
                 get_recomendations,
             ],
         )
-        .mount("/", FileServer::from(relative!("src/static")))
         .attach(CORS)
         .attach(DbInit)
 }

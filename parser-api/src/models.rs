@@ -11,8 +11,8 @@ pub struct TagCount {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UserApiResponse {
-    FullUser(FullUser),
     FullCurrentUser(FullCurrentUser),
+    FullUser(FullUser),    
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,6 +51,7 @@ pub struct TruncatedAccount {
     pub id: i32,
     pub name: String,
     pub api_key: String,
+    pub blacklisted_tags: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -3,9 +3,7 @@ use serde::{Deserialize, Serialize};
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
-mod home_components;
-
-use home_components::*;
+use crate::components::*;
 
 const API_BASE: &str = "http://localhost:8080";
 
@@ -25,15 +23,13 @@ pub struct UserInfo {
 
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
-    // State management
     let user_query = use_state(|| String::new());
-    let found_user = use_state(|| None::<UserInfo>);
-    let is_loading = use_state(|| false);
-    let tag_counts = use_state(|| Vec::<TagCount>::new());
-    let error = use_state(|| None::<String>);
+    let found_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
+    let is_loading: UseStateHandle<bool> = use_state(|| false);
+    let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(|| Vec::<TagCount>::new());
+    let error: UseStateHandle<Option<String>> = use_state(|| None::<String>);
     let canvas_ref = use_node_ref();
 
-    // Load saved accounts from localStorage
     let saved_accounts =
         use_state(
             || match web_sys::window().and_then(|w| w.local_storage().ok()?) {
@@ -48,7 +44,6 @@ pub fn home_page() -> Html {
             },
         );
 
-    // Handler for user query input
     let on_user_input = {
         let user_query = user_query.clone();
         Callback::from(move |e: InputEvent| {
@@ -57,7 +52,6 @@ pub fn home_page() -> Html {
         })
     };
 
-    // Handler for selecting a saved account
     let on_account_select = {
         let saved_accounts = saved_accounts.clone();
         let found_user = found_user.clone();
@@ -80,7 +74,6 @@ pub fn home_page() -> Html {
         })
     };
 
-    // Handler for clearing selection
     let clear_selection = {
         let found_user = found_user.clone();
         let user_query = user_query.clone();
@@ -91,7 +84,6 @@ pub fn home_page() -> Html {
         })
     };
 
-    // Handler for fetching user data
     let fetch_user = {
         let user_query = user_query.clone();
         let found_user = found_user.clone();
@@ -151,105 +143,6 @@ pub fn home_page() -> Html {
         })
     };
 
-    // ANALYZE CALLBACK
-    let analyze_tags = {
-        let found_user = found_user.clone();
-        let is_loading = is_loading.clone();
-        let error = error.clone();
-
-        Callback::from(move |_| {
-            if found_user.is_none() {
-                error.set(Some("No user selected".to_string()));
-                return;
-            }
-
-            let user_id = found_user.as_ref().unwrap().id;
-            is_loading.set(true);
-            error.set(None);
-
-            let is_loading = is_loading.clone();
-            let error = error.clone();
-
-            wasm_bindgen_futures::spawn_local(async move {
-                match Request::post(&format!("{}/process/{}", API_BASE, user_id))
-                    .send()
-                    .await
-                {
-                    Ok(response) => {
-                        if !response.ok() {
-                            let status = response.status();
-                            let text = response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Processing error {}: {}", status, text)));
-                        }
-                    }
-                    Err(e) => {
-                        error.set(Some(format!("Processing error: {}", e)));
-                    }
-                }
-                is_loading.set(false);
-            });
-        })
-    };
-
-    // FETCH CALLBACK
-    let fetch_tags = {
-        let found_user = found_user.clone();
-        let is_loading = is_loading.clone();
-        let tag_counts = tag_counts.clone();
-        let error = error.clone();
-
-        Callback::from(move |_| {
-            if found_user.is_none() {
-                error.set(Some("No user selected".to_string()));
-                return;
-            }
-
-            let user_id = found_user.as_ref().unwrap().id;
-            is_loading.set(true);
-            error.set(None);
-
-            let tag_counts = tag_counts.clone();
-            let is_loading = is_loading.clone();
-            let error = error.clone();
-
-            wasm_bindgen_futures::spawn_local(async move {
-                match Request::get(&format!("{}/account/{}/tag_counts", API_BASE, user_id))
-                    .send()
-                    .await
-                {
-                    Ok(response) => {
-                        if response.ok() {
-                            match response.json::<Vec<TagCount>>().await {
-                                Ok(counts) => {
-                                    tag_counts.set(counts);
-                                    error.set(None);
-                                }
-                                Err(e) => {
-                                    error.set(Some(format!("Failed to parse tag data: {}", e)));
-                                }
-                            }
-                        } else {
-                            let status = response.status();
-                            let text = response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Error {}: {}", status, text)));
-                        }
-                    }
-                    Err(e) => {
-                        error.set(Some(format!("Network error: {}", e)));
-                    }
-                }
-                is_loading.set(false);
-            });
-        })
-    };
-
-    // Render UI
     html! {
         <div>
             <div class="container mt-4">
@@ -280,10 +173,11 @@ pub fn home_page() -> Html {
                                 />
 
                                 <FetchAnalyzeButton
-                                    on_analyze={analyze_tags}
-                                    on_fetch={fetch_tags}
-                                    is_loading={*is_loading}
-                                    is_disabled={found_user.is_none()}
+                                    tag_count={tag_counts.clone()}
+                                    found_user={found_user}
+                                    error={error}
+                                    api_base={API_BASE}
+                                    is_loading={is_loading}
                                 />
                             </div>
                         </div>
@@ -292,8 +186,7 @@ pub fn home_page() -> Html {
             </div>
             <TagChartCard
                 canvas_ref={canvas_ref.clone()}
-                visible={!tag_counts.is_empty()}
-                tag_counts={(*tag_counts).clone()}
+                tag_counts={tag_counts.clone()}
             />
         </div>
     }

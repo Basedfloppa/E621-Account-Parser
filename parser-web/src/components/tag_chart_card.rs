@@ -4,33 +4,35 @@ use wasm_bindgen::prelude::Closure;
 use web_sys::{
     CanvasRenderingContext2d, HtmlCanvasElement, MutationObserver, MutationObserverInit, js_sys,
 };
-use yew::use_memo;
+use yew::{use_memo, UseStateHandle};
 use yew::{
     Callback, Html, NodeRef, Properties, classes, function_component, html, use_effect, use_state,
+    use_effect_with,
 };
 
 #[derive(Properties, PartialEq)]
 pub struct TagChartCardProps {
     pub canvas_ref: NodeRef,
-    pub visible: bool,
-    pub tag_counts: Vec<TagCount>,
+    pub tag_counts: UseStateHandle<Vec<TagCount>>,
 }
 
 #[function_component(TagChartCard)]
 pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     let theme_trigger = use_state(|| 0);
     let selected_group = use_state(|| String::new());
+    let resize_trigger = use_state(|| 0);
+    
     let current_tags = use_memo(
         (selected_group.clone(), props.tag_counts.clone()),
         |(group, tags)| {
             tags.iter()
-                .filter(|tag| tag.group_type == *group.clone())
+                .filter(|tag| tag.group_type == **group)
                 .cloned()
                 .collect::<Vec<TagCount>>()
         },
     );
-    let current_tags = (*current_tags).clone();
-    let group_types = use_memo(props.tag_counts.clone(), |tag_counts: &Vec<TagCount>| {
+    
+    let group_types = use_memo(props.tag_counts.clone(), |tag_counts| {
         let mut groups: Vec<String> = tag_counts
             .iter()
             .map(|tag| tag.group_type.clone())
@@ -40,30 +42,27 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
         groups
     });
 
-    {
-        let selected_group = selected_group.clone();
-        let group_types = group_types.clone();
-
-        use_effect(move || {
-            let current = &*selected_group;
-
-            if current.is_empty() || !group_types.contains(current) {
-                if let Some(first) = group_types.get(0) {
+    use_effect_with(
+        (selected_group.clone(), group_types.clone()),
+        |(selected_group, group_types)| {
+            if selected_group.is_empty() || !group_types.contains(&**selected_group) {
+                if let Some(first) = group_types.first() {
                     selected_group.set(first.clone());
                 }
             }
-
             || ()
-        });
-    }
+        },
+    );
 
-    {
-        let theme_version = theme_trigger.clone();
-
-        use_effect(move || {
+    // Theme change observer - FIXED: Proper cloning
+    use_effect({
+        let theme_trigger = theme_trigger.clone();
+        move || {
             let document = web_sys::window().unwrap().document().unwrap();
             let target = document.document_element().unwrap();
 
+            // Clone theme_trigger for use in closure
+            let trigger = theme_trigger.clone();
             let callback = Closure::<dyn FnMut(js_sys::Array, _)>::new(
                 move |mutations: js_sys::Array, _: web_sys::MutationObserver| {
                     for i in 0..mutations.length() {
@@ -77,7 +76,8 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
                         if attr_name == Some("data-bs-theme".to_string())
                             || attr_name == Some("class".to_string())
                         {
-                            theme_version.set(*theme_version + 1);
+                            // Use cloned trigger here
+                            trigger.set(*trigger + 1);
                             break;
                         }
                     }
@@ -93,24 +93,39 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
 
             move || {
                 observer.disconnect();
-                callback.forget();
             }
-        });
-    }
+        }
+    });
 
-    {
-        let canvas_ref = props.canvas_ref.clone();
-        let current_tags = current_tags.clone();
-        let theme_trigger = *theme_trigger; // primitive, copied
+    // Setup resize observer
+    use_effect({
+        let resize_trigger = resize_trigger.clone();
+        move || {
+            let closure = Closure::<dyn FnMut()>::new(move || {
+                resize_trigger.set(*resize_trigger + 1);
+            });
+            
+            let window = web_sys::window().unwrap();
+            window.add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+                .unwrap();
+            
+            move || {
+                window.remove_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+                    .unwrap();
+            }
+        }
+    });
 
-        use_effect(move || {
+    // Draw chart effect
+    use_effect_with(
+        (props.canvas_ref.clone(), current_tags.clone(), *theme_trigger, *resize_trigger),
+        |(canvas_ref, current_tags, _, _)| {
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                resize_canvas(&canvas, current_tags.len());
                 draw_chart(&canvas, &current_tags);
             }
             || ()
-        });
-    }
+        },
+    );
 
     let on_tab_click = {
         let selected_group = selected_group.clone();
@@ -119,8 +134,8 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
         })
     };
 
-    if !props.visible {
-        return html! {};
+    if props.tag_counts.is_empty() {
+        return html! {}; 
     }
 
     html! {
@@ -223,7 +238,7 @@ fn draw_chart(canvas: &web_sys::HtmlCanvasElement, tag_counts: &[TagCount]) {
     let right_padding = max_right_text_width + 40.0;
 
     let chart_width = logical_width - left_padding - right_padding;
-    if logical_width == 0.0 || tag_counts.is_empty() {
+    if chart_width <= 0.0 {
         return;
     }
 
@@ -293,32 +308,4 @@ fn get_css_variable_value(var_name: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|v| !v.is_empty())
-}
-
-fn resize_canvas(canvas: &HtmlCanvasElement, tag_count_len: usize) {
-    let window = web_sys::window().expect("no global window exists");
-    let device_pixel_ratio = window.device_pixel_ratio();
-
-    let logical_width = canvas.client_width() as f64;
-    if logical_width == 0.0 || tag_count_len == 0 {
-        return;
-    }
-
-    let bar_spacing = 30.0;
-    let top_padding = 30.0;
-    let bottom_padding = 30.0;
-
-    let ideal_height = top_padding + bottom_padding + (bar_spacing * tag_count_len as f64);
-    let max_logical_height = 2048.0;
-    let logical_height = ideal_height.min(max_logical_height);
-
-    let physical_width = (logical_width * device_pixel_ratio).round() as u32;
-    let physical_height = (logical_height * device_pixel_ratio).round() as u32;
-
-    if canvas.width() != physical_width {
-        canvas.set_width(physical_width);
-    }
-    if canvas.height() != physical_height {
-        canvas.set_height(physical_height);
-    }
 }

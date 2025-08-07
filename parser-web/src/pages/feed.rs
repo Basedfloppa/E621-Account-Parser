@@ -6,10 +6,7 @@ use web_sys::{HtmlSelectElement, Request, RequestInit, RequestMode, Response};
 use yew::prelude::*;
 use yew_hooks::prelude::*;
 
-mod feed_components;
-
-use feed_components::*;
-
+use crate::components::*;
 use crate::pages::UserInfo;
 
 #[function_component(FeedPage)]
@@ -34,10 +31,6 @@ pub fn feed_page() -> Html {
             },
         );
     let selected_user = use_state(|| Option::<UserInfo>::None);
-    let selected_value = (*selected_user)
-        .as_ref()
-        .map(|u| u.id.to_string())
-        .unwrap_or_default();
 
     let fetch_page = {
         let posts = posts.clone();
@@ -59,8 +52,7 @@ pub fn feed_page() -> Html {
             };
             let url = format!(
                 "http://localhost:8080/recomendations/{}?page={}",
-                 user.id,
-                 *page
+                user.id, *page
             );
 
             is_loading.set(true);
@@ -167,7 +159,6 @@ pub fn feed_page() -> Html {
         });
     }
 
-    // Click behavior for cards
     let on_post_click = Callback::from(|id: i64| {
         let _ = web_sys::window()
             .and_then(|w| w.alert_with_message(&format!("Clicked post #{id}")).ok());
@@ -177,13 +168,12 @@ pub fn feed_page() -> Html {
         <div class="container my-4">
             <h2 class="mb-3">{ "Latest Posts" }</h2>
 
-            // --- Account selector ---
             <SavedAccountsSelect
-                saved_accounts = {(*saved_accounts).clone()}
-                value          = {selected_value}
-                on_select      = {on_select}
-                on_clear       = {on_clear}
-                is_loading     = {*is_loading}
+                saved_accounts={(*saved_accounts).clone()}
+                selected_user={(*selected_user).clone()}
+                on_select={on_select}
+                on_clear={on_clear}
+                is_loading={*is_loading}
             />
 
             <div class="d-flex align-items-center justify-content-between mb-3">
@@ -280,7 +270,6 @@ pub fn feed_page() -> Html {
     }
 }
 
-/// Fetch JSON via window.fetch using web_sys, deserializing with serde_json.
 async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
     let window = web_sys::window().ok_or("No window available".to_string())?;
 

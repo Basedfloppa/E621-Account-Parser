@@ -140,7 +140,6 @@ pub fn account_creator() -> Html {
         })
     };
 
-    // Determine message class based on error state
     let message_class = if message.is_empty() {
         "d-none"
     } else if *error {

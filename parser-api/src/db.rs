@@ -47,7 +47,9 @@ fn ensure_sqlite() -> Result<()> {
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        api_key TEXT NOT NULL
+        api_key TEXT NOT NULL,
+        blacklisted_tags TEXT NOT NULL,
+        UNIQUE(id, name)
     );
     CREATE TABLE IF NOT EXISTS tags_posts (
         tag_id INTEGER NOT NULL,
@@ -69,10 +71,10 @@ fn ensure_sqlite() -> Result<()> {
     Ok(())
 }
 
-pub fn save_account(account_id: i32, name: &str, api_key: &str) -> Result<()> {
+pub fn save_account(account_id: i32, name: &str, api_key: &str, blacklisted_tags: &str) -> Result<()> {
     open_db()?.execute(
-        "INSERT OR IGNORE INTO accounts (id, name, api_key) VALUES (?1, ?2, ?3)",
-        params![account_id, name, api_key],
+        "INSERT OR REPLACE INTO accounts (id, name, api_key, blacklisted_tags) VALUES (?1, ?2, ?3, ?4)",
+        params![account_id, name, api_key, blacklisted_tags],
     )?;
     Ok(())
 }
@@ -180,6 +182,7 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 api_key: row.get(2)?,
+                blacklisted_tags: row.get(3)?
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -191,7 +194,7 @@ pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount> {
     let conn = open_db()?;
     let mut stmt = conn.prepare(
         r#"
-        SELECT a.id, a.name, a.api_key
+        SELECT a.id, a.name, a.api_key, a.blacklisted_tags
         FROM accounts a
         WHERE a.id = ?
         "#,
@@ -202,6 +205,7 @@ pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 api_key: row.get(2)?,
+                blacklisted_tags: row.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

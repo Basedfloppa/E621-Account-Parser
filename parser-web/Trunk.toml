@@ -1,3 +1,7 @@
 [serve]
 addresses = ["127.0.0.1"]
 port = 8000
+
+[[copy]]
+src = "static"
+target = ""
