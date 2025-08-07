@@ -23,7 +23,7 @@ pub struct UserInfo {
 
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
-    let user_query = use_state(|| String::new());
+    let user_query: UseStateHandle<String> = use_state(|| String::new());
     let found_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
     let is_loading: UseStateHandle<bool> = use_state(|| false);
     let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(|| Vec::<TagCount>::new());
@@ -43,14 +43,6 @@ pub fn home_page() -> Html {
                 _ => vec![],
             },
         );
-
-    let on_user_input = {
-        let user_query = user_query.clone();
-        Callback::from(move |e: InputEvent| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            user_query.set(input.value());
-        })
-    };
 
     let on_account_select = {
         let saved_accounts = saved_accounts.clone();
@@ -84,65 +76,6 @@ pub fn home_page() -> Html {
         })
     };
 
-    let fetch_user = {
-        let user_query = user_query.clone();
-        let found_user = found_user.clone();
-        let is_loading = is_loading.clone();
-        let error = error.clone();
-
-        Callback::from(move |_| {
-            let query = user_query.to_string();
-            if query.is_empty() {
-                error.set(Some("Please enter a username or ID".to_string()));
-                return;
-            }
-
-            is_loading.set(true);
-            error.set(None);
-
-            // Determine if query is numeric ID
-            let is_id = query.parse::<i64>().is_ok();
-            let url = if is_id {
-                format!("{}/user/id/{}", API_BASE, query)
-            } else {
-                format!("{}/user/name/{}", API_BASE, query)
-            };
-
-            let found_user = found_user.clone();
-            let is_loading = is_loading.clone();
-            let error = error.clone();
-
-            wasm_bindgen_futures::spawn_local(async move {
-                match Request::get(&url).send().await {
-                    Ok(response) => {
-                        if response.ok() {
-                            match response.json::<UserInfo>().await {
-                                Ok(user) => {
-                                    found_user.set(Some(user));
-                                    error.set(None);
-                                }
-                                Err(e) => {
-                                    error.set(Some(format!("Failed to parse user data: {}", e)));
-                                }
-                            }
-                        } else {
-                            let status = response.status();
-                            let text = response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Error {}: {}", status, text)));
-                        }
-                    }
-                    Err(e) => {
-                        error.set(Some(format!("Network error: {}", e)));
-                    }
-                }
-                is_loading.set(false);
-            });
-        })
-    };
-
     html! {
         <div>
             <div class="container mt-4">
@@ -161,23 +94,24 @@ pub fn home_page() -> Html {
                                 />
 
                                 <UserSearchForm
-                                    user_query={(*user_query).clone()}
-                                    on_input={on_user_input}
-                                    on_search={fetch_user}
-                                    is_loading={*is_loading}
+                                    user_query={user_query.clone()}
+                                    found_user={found_user.clone()}
+                                    error={error.clone()}
+                                    api_base={API_BASE}
+                                    is_loading={is_loading.clone()}
                                 />
 
                                 <UserInfoAlert
-                                    user={(*found_user).clone()}
-                                    error={(*error).clone()}
+                                    user={found_user.clone()}
+                                    error={error.clone()}
                                 />
 
                                 <FetchAnalyzeButton
                                     tag_count={tag_counts.clone()}
-                                    found_user={found_user}
-                                    error={error}
+                                    found_user={found_user.clone()}
+                                    error={error.clone()}
                                     api_base={API_BASE}
-                                    is_loading={is_loading}
+                                    is_loading={is_loading.clone()}
                                 />
                             </div>
                         </div>
