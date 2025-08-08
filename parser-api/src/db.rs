@@ -171,7 +171,7 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount> {
     let conn = open_db()?;
     let mut stmt = conn.prepare(
         r#"
-        SELECT a.id, a.name, a.api_key
+        SELECT a.id, a.name, a.api_key, a.blacklisted_tags
         FROM accounts a
         WHERE a.name = ?
         "#,

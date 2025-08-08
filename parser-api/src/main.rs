@@ -103,7 +103,7 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     }
 }
 
-#[get("/recomendations/<account_id>?<page>")]
+#[get("/recommendations/<account_id>?<page>")]
 async fn get_recomendations(
     account_id: i32,
     page: Option<i32>,

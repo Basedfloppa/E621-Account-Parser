@@ -5,13 +5,13 @@ edition = "2024"
 
 [dependencies]
 wasm-bindgen-futures = "0.4"
-wasm-bindgen = { version = "0.2.100", features = []}
+wasm-bindgen = { version = "0.2.100", features = [] }
 web-sys = { version = "0.3.77", features = [
-    "Window", 
-    "Storage", 
-    "StorageEvent", 
-    "HtmlElement", 
-    "HtmlSelectElement", 
+    "Window",
+    "Storage",
+    "StorageEvent",
+    "HtmlElement",
+    "HtmlSelectElement",
     "HtmlCanvasElement",
     "CanvasRenderingContext2d",
     "TextMetrics",
@@ -19,9 +19,16 @@ web-sys = { version = "0.3.77", features = [
     "MutationObserver",
     "MutationObserverInit",
     "MutationRecord",
-    ] }
+    "AbortController",
+    "AbortSignal",
+    "Request",
+    "RequestInit",
+    "Response",
+    "console",
+] }
+urlencoding = { version = "2.1.3" }
 yew = { version = "0.21.0", features = ["csr"] }
-yew-hooks = { version = "0.3.4"}
+yew-hooks = { version = "0.3.4" }
 yew-router = { version = "0.18.0" }
 reqwasm = "0.5.0"
 serde = { version = "1.0", features = ["derive"] }

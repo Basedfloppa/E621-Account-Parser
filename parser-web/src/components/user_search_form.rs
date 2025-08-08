@@ -1,6 +1,6 @@
 use reqwasm::http::Request;
-use web_sys::HtmlInputElement;
-use yew::{function_component, html, use_state, Callback, Html, InputEvent, Properties, TargetCast, UseStateHandle};
+use web_sys::{HtmlInputElement, InputEvent}; // <-- from web_sys
+use yew::{function_component, html, use_state, Callback, Html, Properties, TargetCast, UseStateHandle};
 
 use crate::pages::UserInfo;
 
@@ -14,7 +14,7 @@ pub struct UserSearchProps {
 
 #[function_component(UserSearchForm)]
 pub fn user_search_form(props: &UserSearchProps) -> Html {
-    let user_query = use_state(|| "".to_string());
+    let user_query = use_state(|| String::new());
 
     let on_input = {
         let user_query = user_query.clone();
@@ -32,21 +32,27 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
         let error = props.error.clone();
 
         Callback::from(move |_| {
-            let query = user_query.to_string();
+            let mut query = user_query.to_string();
+            query = query.trim().to_string();
             if query.is_empty() {
-                error.set(Some("Please enter a username or ID".to_string()));
+                error.set(Some("Please enter a username or ID".into()));
                 return;
             }
 
             is_loading.set(true);
             error.set(None);
 
-            // Determine if query is numeric ID
             let is_id = query.parse::<i64>().is_ok();
-            let url = if is_id {
-                format!("{}/user/id/{}", api_base, query)
+            let encoded = if is_id {
+                query.clone()
             } else {
-                format!("{}/user/name/{}", api_base, query)
+                urlencoding::encode(&query).to_string()
+            };
+
+            let url = if is_id {
+                format!("{}/user/id/{}", api_base, encoded)
+            } else {
+                format!("{}/user/name/{}", api_base, encoded)
             };
 
             let found_user = found_user.clone();
@@ -63,21 +69,16 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
                                     error.set(None);
                                 }
                                 Err(e) => {
-                                    error.set(Some(format!("Failed to parse user data: {}", e)));
+                                    error.set(Some(format!("Failed to parse user data: {e}")));
                                 }
                             }
                         } else {
                             let status = response.status();
-                            let text = response
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Error {}: {}", status, text)));
+                            let text = response.text().await.unwrap_or_else(|_| "Unknown error".into());
+                            error.set(Some(format!("Error {status}: {text}")));
                         }
                     }
-                    Err(e) => {
-                        error.set(Some(format!("Network error: {}", e)));
-                    }
+                    Err(e) => error.set(Some(format!("Network error: {e}"))),
                 }
                 is_loading.set(false);
             });
@@ -92,14 +93,14 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
                     type="text"
                     class="form-control"
                     value={(*user_query).clone()}
-                    oninput={on_input.clone()}
+                    oninput={on_input}
                     placeholder="Enter username or ID"
                     disabled={*props.is_loading}
                 />
                 <button
                     class="btn btn-primary"
                     type="button"
-                    onclick={fetch_user.clone()}
+                    onclick={fetch_user}
                     disabled={*props.is_loading}
                 >
                     {"Search"}

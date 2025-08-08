@@ -2,7 +2,6 @@ use yew::prelude::*;
 
 use crate::models::*;
 
-/// Props for the PostCard component.
 #[derive(Properties, PartialEq)]
 pub struct PostCardProps {
     pub post: Post,
@@ -17,7 +16,6 @@ pub struct PostCardProps {
 #[function_component(PostCard)]
 pub fn post_card(props: &PostCardProps) -> Html {
     let post = &props.post;
-
     let img_url = preferred_image_url(post);
     let alt_text = props.alt.clone().unwrap_or_else(|| {
         let mut parts: Vec<String> = Vec::new();
@@ -35,7 +33,6 @@ pub fn post_card(props: &PostCardProps) -> Html {
     let score_summary = format!("{}", post.score.total);
     let score_detail = format!("↑ {}   ↓ {}", post.score.up, post.score.down);
 
-    // If clickable, attach handler that always emits; noop is safe.
     let onclick = {
         let cb = props.on_click.clone();
         let id = post.id;
@@ -56,7 +53,6 @@ pub fn post_card(props: &PostCardProps) -> Html {
         <div
             class="card h-100"
             style={card_style}
-            // Only add onclick when clickable, to avoid confusing semantics.
             onclick={onclick}
             aria-label={format!("Post {}, rating {:?}, score {}", post.id, post.rating, post.score.total)}
             role={if props.clickable { "button" } else { "group" }}

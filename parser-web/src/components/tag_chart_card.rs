@@ -4,11 +4,11 @@ use wasm_bindgen::prelude::Closure;
 use web_sys::{
     CanvasRenderingContext2d, HtmlCanvasElement, MutationObserver, MutationObserverInit, js_sys,
 };
-use yew::{use_memo, UseStateHandle};
 use yew::{
-    Callback, Html, NodeRef, Properties, classes, function_component, html, use_effect, use_state,
-    use_effect_with,
+    Callback, Html, NodeRef, Properties, classes, function_component, html, use_effect,
+    use_effect_with, use_state,
 };
+use yew::{UseStateHandle, use_memo};
 
 #[derive(Properties, PartialEq)]
 pub struct TagChartCardProps {
@@ -21,7 +21,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     let theme_trigger = use_state(|| 0);
     let selected_group = use_state(|| String::new());
     let resize_trigger = use_state(|| 0);
-    
+
     let current_tags = use_memo(
         (selected_group.clone(), props.tag_counts.clone()),
         |(group, tags)| {
@@ -31,7 +31,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
                 .collect::<Vec<TagCount>>()
         },
     );
-    
+
     let group_types = use_memo(props.tag_counts.clone(), |tag_counts| {
         let mut groups: Vec<String> = tag_counts
             .iter()
@@ -54,42 +54,37 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
         },
     );
 
-    // Theme change observer - FIXED: Proper cloning
     use_effect({
         let theme_trigger = theme_trigger.clone();
         move || {
             let document = web_sys::window().unwrap().document().unwrap();
-            let target = document.document_element().unwrap();
+            let target = document.body().unwrap();
 
-            // Clone theme_trigger for use in closure
             let trigger = theme_trigger.clone();
             let callback = Closure::<dyn FnMut(js_sys::Array, _)>::new(
-                move |mutations: js_sys::Array, _: web_sys::MutationObserver| {
+                move |mutations: js_sys::Array, _obs: web_sys::MutationObserver| {
                     for i in 0..mutations.length() {
-                        let mutation = mutations.get(i);
-                        let mutation = match mutation.dyn_into::<web_sys::MutationRecord>() {
-                            Ok(m) => m,
-                            Err(_) => continue,
-                        };
-
-                        let attr_name = mutation.attribute_name();
-                        if attr_name == Some("data-bs-theme".to_string())
-                            || attr_name == Some("class".to_string())
-                        {
-                            // Use cloned trigger here
-                            trigger.set(*trigger + 1);
-                            break;
+                        let mutation = mutations.get(i).dyn_into::<web_sys::MutationRecord>().ok();
+                        if let Some(m) = mutation {
+                            let attr = m.attribute_name();
+                            if attr.as_deref() == Some("data-bs-theme")
+                                || attr.as_deref() == Some("class")
+                            {
+                                trigger.set(*trigger + 1);
+                                break;
+                            }
                         }
                     }
                 },
             );
 
-            let observer = MutationObserver::new(callback.as_ref().unchecked_ref())
-                .expect("Failed to create observer");
-
+            let observer = MutationObserver::new(callback.as_ref().unchecked_ref()).unwrap();
             let options = MutationObserverInit::new();
             options.set_attributes(true);
-            let _ = observer.observe_with_options(&target, &options);
+            observer.observe_with_options(&target, &options).unwrap();
+
+            // Keep the callback alive for the lifetime of the observer.
+            callback.forget();
 
             move || {
                 observer.disconnect();
@@ -97,28 +92,33 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
         }
     });
 
-    // Setup resize observer
     use_effect({
         let resize_trigger = resize_trigger.clone();
         move || {
             let closure = Closure::<dyn FnMut()>::new(move || {
                 resize_trigger.set(*resize_trigger + 1);
             });
-            
+
             let window = web_sys::window().unwrap();
-            window.add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+            window
+                .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
                 .unwrap();
-            
+
             move || {
-                window.remove_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+                window
+                    .remove_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
                     .unwrap();
             }
         }
     });
 
-    // Draw chart effect
     use_effect_with(
-        (props.canvas_ref.clone(), current_tags.clone(), *theme_trigger, *resize_trigger),
+        (
+            props.canvas_ref.clone(),
+            current_tags.clone(),
+            *theme_trigger,
+            *resize_trigger,
+        ),
         |(canvas_ref, current_tags, _, _)| {
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                 draw_chart(&canvas, &current_tags);
@@ -135,7 +135,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     };
 
     if props.tag_counts.is_empty() {
-        return html! {}; 
+        return html! {};
     }
 
     html! {
@@ -246,16 +246,18 @@ fn draw_chart(canvas: &web_sys::HtmlCanvasElement, tag_counts: &[TagCount]) {
     let bar_height = bar_spacing.min(chart_height / tag_counts.len() as f64);
     let max_value = tag_counts.iter().map(|t| t.count).max().unwrap_or(1) as f64;
 
+    let el: &web_sys::Element = canvas.as_ref();
+
     let colors = [
-        get_css_variable_value("--bs-primary").unwrap_or("#0d6efd".into()),
-        get_css_variable_value("--bs-success").unwrap_or("#198754".into()),
-        get_css_variable_value("--bs-info").unwrap_or("#0dcaf0".into()),
-        get_css_variable_value("--bs-warning").unwrap_or("#ffc107".into()),
-        get_css_variable_value("--bs-danger").unwrap_or("#dc3545".into()),
-        get_css_variable_value("--bs-secondary").unwrap_or("#6c757d".into()),
-        get_css_variable_value("--bs-dark").unwrap_or("#212529".into()),
+        get_css_variable_value_on(el, "--bs-primary").unwrap_or("#0d6efd".into()),
+        get_css_variable_value_on(el, "--bs-success").unwrap_or("#198754".into()),
+        get_css_variable_value_on(el, "--bs-info").unwrap_or("#0dcaf0".into()),
+        get_css_variable_value_on(el, "--bs-warning").unwrap_or("#ffc107".into()),
+        get_css_variable_value_on(el, "--bs-danger").unwrap_or("#dc3545".into()),
+        get_css_variable_value_on(el, "--bs-secondary").unwrap_or("#6c757d".into()),
+        get_css_variable_value_on(el, "--bs-dark").unwrap_or("#212529".into()),
     ];
-    let text_color = get_css_variable_value("--bs-body-color").unwrap_or("#212529".into());
+    let text_color = get_css_variable_value_on(el, "--bs-body-color").unwrap_or("#212529".into());
 
     for (i, tag) in tag_counts.iter().enumerate() {
         let y = top_padding + i as f64 * bar_spacing;
@@ -296,16 +298,12 @@ fn draw_chart(canvas: &web_sys::HtmlCanvasElement, tag_counts: &[TagCount]) {
         .unwrap_or(());
 }
 
-fn get_css_variable_value(var_name: &str) -> Option<String> {
+fn get_css_variable_value_on(el: &web_sys::Element, var_name: &str) -> Option<String> {
     let window = web_sys::window()?;
-    let document = window.document()?;
-    let root = document.document_element()?;
-
-    let computed_style = window.get_computed_style(&root).ok()??;
-
-    computed_style
+    let computed = window.get_computed_style(el).ok()??;
+    computed
         .get_property_value(var_name)
         .ok()
-        .map(|value| value.trim().to_string())
+        .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }

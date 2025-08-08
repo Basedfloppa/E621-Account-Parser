@@ -1,11 +1,7 @@
-use reqwasm::http::Request;
 use serde::{Deserialize, Serialize};
-use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
-use crate::components::*;
-
-const API_BASE: &str = "http://localhost:8080";
+use crate::{components::*, models};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TagCount {
@@ -46,7 +42,7 @@ pub fn home_page() -> Html {
                                 <UserSearchForm
                                     found_user={selected_user.clone()}
                                     error={error.clone()}
-                                    api_base={API_BASE}
+                                    api_base={models::API_BASE}
                                     is_loading={is_loading.clone()}
                                 />
 
@@ -59,7 +55,7 @@ pub fn home_page() -> Html {
                                     tag_count={tag_counts.clone()}
                                     found_user={selected_user.clone()}
                                     error={error.clone()}
-                                    api_base={API_BASE}
+                                    api_base={models::API_BASE}
                                     is_loading={is_loading.clone()}
                                 />
                             </div>
