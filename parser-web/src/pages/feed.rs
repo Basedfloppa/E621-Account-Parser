@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -28,7 +30,9 @@ pub fn feed_page() -> Html {
         let selected_user = selected_user.clone();
 
         Callback::from(move |_| {
-            if *is_loading { return; }
+            if *is_loading {
+                return;
+            }
 
             let Some(user) = (*selected_user).clone() else {
                 error.set(Some("Select an account to load the feed.".to_string()));
@@ -84,23 +88,21 @@ pub fn feed_page() -> Html {
         let is_loading = is_loading.clone();
         let fetch_page = fetch_page.clone();
 
-        use_effect_with((*selected_user).clone(), move |selected: &Option<UserInfo>| {
-            if let Some(u) = selected {
-                posts.set(Vec::new());
-                page.set(1);
-                has_more.set(true);
-                error.set(None);
-                is_loading.set(false);
-                fetch_page.emit(());
-            }
-            || ()
-        });
+        use_effect_with(
+            (*selected_user).clone(),
+            move |selected: &Option<UserInfo>| {
+                if let Some(u) = selected {
+                    posts.set(Vec::new());
+                    page.set(1);
+                    has_more.set(true);
+                    error.set(None);
+                    is_loading.set(false);
+                    fetch_page.emit(());
+                }
+                || ()
+            },
+        );
     }
-
-    let on_post_click = Callback::from(|id: i64| {
-        let _ = web_sys::window()
-            .and_then(|w| w.alert_with_message(&format!("Clicked post #{id}")).ok());
-    });
 
     html! {
         <div class="container my-4">
@@ -162,7 +164,7 @@ pub fn feed_page() -> Html {
                         let p = post.clone();
                         html! {
                             <div key={p.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
-                                <PostCard post={p} clickable={true} on_click={on_post_click.clone()} />
+                                <PostCard post={Rc::new(p)}/>
                             </div>
                         }
                     }).collect::<Html>()
@@ -236,7 +238,11 @@ async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
         .map_err(|_| "Failed to cast Response".to_string())?;
 
     if !resp.ok() {
-        return Err(format!("HTTP error {} {}", resp.status(), resp.status_text()));
+        return Err(format!(
+            "HTTP error {} {}",
+            resp.status(),
+            resp.status_text()
+        ));
     }
 
     let text_promise = resp
