@@ -9,8 +9,7 @@ use cors::*;
 use db::*;
 use models::*;
 
-use rocket::fs::{FileServer, relative};
-use std::io::{Error, ErrorKind};
+use std::{collections::HashMap, io::{Error, ErrorKind}};
 
 use crate::rocket::serde::json;
 
@@ -93,7 +92,12 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
         UserApiResponse::FullUser(u) => "".to_string(),
     };
 
-    match save_account(account.id, &account.name, &account.api_key, &blacklisted_tags) {
+    match save_account(
+        account.id,
+        &account.name,
+        &account.api_key,
+        &blacklisted_tags,
+    ) {
         Ok(_) => Ok(()),
         Err(e) => {
             let error_msg = format!("Failed to get account: {}", e);
@@ -108,6 +112,18 @@ async fn get_recomendations(
     account_id: i32,
     page: Option<i32>,
 ) -> Result<Json<Vec<Post>>, std::io::Error> {
+    let group_weights = HashMap::from([
+        ("artist", 2.0),
+        ("character", 1.5),
+        ("copyright", 1.3),
+        ("species", 1.2),
+        ("general", 1.0),
+        ("meta", 0.4),
+        ("invalid", 0.2),
+        ("lore", 0.6),
+        ("contributor", 0.8),
+    ]);
+
     let tags = match get_tag_counts(account_id) {
         Ok(counts) => counts.to_vec(),
         Err(e) => {
@@ -201,7 +217,7 @@ async fn get_recomendations(
                 .collect(),
         );
 
-        let score = utils::post_affinity(&tags, &post_tags);
+        let score = utils::post_affinity(&tags, &post_tags, &group_weights, None, None);
 
         result.push((tmp_post, score));
     }

@@ -1,51 +1,116 @@
-use std::collections::{HashMap, HashSet};
+use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 use crate::models::TagCount;
 
-pub fn post_affinity(account_tag_counts: &[TagCount], post_tags: &[(String, String)]) -> f32 {
+pub struct Priors {
+    pub now: DateTime<Utc>,
+    pub recency_tau_days: f32, // e.g., 14.0
+    pub quality_a: f32,        // e.g., 0.01
+    pub quality_b: f32,        // e.g., 0.001
+    pub mix_sim: f32,          // e.g., 0.7
+    pub mix_quality: f32,      // e.g., 0.2
+    pub mix_recency: f32,      // e.g., 0.1
+}
+
+#[inline]
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+pub fn post_affinity(
+    account_tag_counts: &[TagCount],
+    post_tags: &[(String, String)],   // (name, group)
+    group_wts: &HashMap<&str, f32>,   // e.g. {"artist":2.0, "character":1.5, ...}
+    idf: Option<&HashMap<&str, f32>>, // optional rarity weights per tag *name*
+    priors: Option<(&Priors, i64, i64, DateTime<Utc>)>, // (priors, score_total, fav_count, created_at)
+) -> f32 {
     if account_tag_counts.is_empty() || post_tags.is_empty() {
         return 0.0;
     }
 
-    // Build the account vector: weights over (name, group)
-    let mut acc: HashMap<(&str, &str), f32> = HashMap::with_capacity(account_tag_counts.len());
-    for entry in account_tag_counts {
-        if entry.count > 0 {
-            let name = entry.name.as_str();
-            let group = entry.group_type.as_str();
-            // If duplicates exist, accumulate; otherwise just insert
-            *acc.entry((name, group)).or_insert(0.0) += entry.count as f32;
+    // Build user vector: w_u(tag,group) = log1p(count) * group_weight * idf(tag?)
+    let mut user: HashMap<(&str, &str), f32> = HashMap::with_capacity(account_tag_counts.len());
+    for t in account_tag_counts {
+        if t.count <= 0 {
+            continue;
+        }
+        let g = t.group_type.as_str();
+        let name = t.name.as_str();
+
+        // group weight
+        let gw = *group_wts.get(g).unwrap_or(&1.0);
+
+        // idf by *name* (group-agnostic); safe default 1.0
+        let iw = idf.and_then(|m| m.get(name)).copied().unwrap_or(1.0);
+
+        let w = (t.count as f32).ln_1p() * gw * iw;
+        if w > 0.0 {
+            *user.entry((name, g)).or_insert(0.0) += w;
         }
     }
-    if acc.is_empty() {
+    if user.is_empty() {
         return 0.0;
     }
 
-    // Build a set of unique (name, group) pairs present in the post
-    let post_set: HashSet<(&str, &str)> = post_tags
-        .iter()
-        .map(|(name, group)| (name.as_str(), group.as_str()))
-        .collect();
-    if post_set.is_empty() {
+    // Build post weights: binary presence * group_weight * idf(tag?)
+    // De-dupe by (name, group)
+    let mut post: HashMap<(&str, &str), f32> = HashMap::with_capacity(post_tags.len());
+    for (name_s, group_s) in post_tags {
+        let name = name_s.as_str();
+        let g = group_s.as_str();
+        let gw = *group_wts.get(g).unwrap_or(&1.0);
+        let iw = idf.and_then(|m| m.get(name)).copied().unwrap_or(1.0);
+        // Binary presence → weight is just gw*iw
+        post.entry((name, g)).or_insert(gw * iw);
+    }
+    if post.is_empty() {
         return 0.0;
     }
 
-    // Dot product between account weights and post's binary vector
+    // Cosine similarity
     let mut dot: f32 = 0.0;
-    for key in &post_set {
-        if let Some(&w) = acc.get(key) {
-            dot += w;
+    let mut u_norm_sq: f32 = 0.0;
+    let mut p_norm_sq: f32 = 0.0;
+
+    for (&_k, &uw) in &user {
+        u_norm_sq += uw * uw;
+    }
+    for (&_k, &pw) in &post {
+        p_norm_sq += pw * pw;
+    }
+
+    // iterate on the sparser side for speed
+    let (smaller, other) = if user.len() <= post.len() {
+        (&user, &post)
+    } else {
+        (&post, &user)
+    };
+    for (k, &w) in smaller {
+        if let Some(&w2) = other.get(k) {
+            dot += w * w2;
         }
     }
 
-    // Norms
-    let acc_norm_sq: f32 = acc.values().map(|w| w * w).sum();
-    let acc_norm = acc_norm_sq.sqrt();
-    let post_norm = (post_set.len() as f32).sqrt(); // binary vector: 1 per unique (name, group)
-
-    if acc_norm == 0.0 || post_norm == 0.0 {
+    let sim = if u_norm_sq == 0.0 || p_norm_sq == 0.0 {
         0.0
     } else {
-        (dot / (acc_norm * post_norm)).clamp(0.0, 1.0)
+        (dot / (u_norm_sq.sqrt() * p_norm_sq.sqrt())).clamp(0.0, 1.0)
+    };
+
+    // Optional priors
+    if let Some((p, score_total, fav_count, created_at)) = priors {
+        // quality prior
+        let quality =
+            sigmoid(p.quality_a * (score_total as f32) + p.quality_b * (fav_count as f32));
+        // recency prior
+        let age_days = (p.now - created_at).num_seconds() as f32 / 86400.0;
+        let recency = (-age_days / p.recency_tau_days.max(1e-3))
+            .exp()
+            .clamp(0.0, 1.0);
+
+        (p.mix_sim * sim + p.mix_quality * quality + p.mix_recency * recency).clamp(0.0, 1.0)
+    } else {
+        sim
     }
 }
