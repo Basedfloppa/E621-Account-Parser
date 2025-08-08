@@ -1,6 +1,6 @@
 use yew::prelude::*;
 
-use crate::pages::{Post, Rating};
+use crate::models::*;
 
 /// Props for the PostCard component.
 #[derive(Properties, PartialEq)]

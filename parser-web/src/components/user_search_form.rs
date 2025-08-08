@@ -1,13 +1,12 @@
 use reqwasm::http::Request;
 use web_sys::HtmlInputElement;
-use yew::{function_component, html, Callback, Html, InputEvent, Properties, TargetCast, UseStateHandle};
+use yew::{function_component, html, use_state, Callback, Html, InputEvent, Properties, TargetCast, UseStateHandle};
 
 use crate::pages::UserInfo;
 
 #[derive(Properties, PartialEq)]
 pub struct UserSearchProps {
     pub found_user: UseStateHandle<Option<UserInfo>>,
-    pub user_query: UseStateHandle<String>,
     pub is_loading: UseStateHandle<bool>,
     pub api_base: String,
     pub error: UseStateHandle<Option<String>>,
@@ -15,8 +14,10 @@ pub struct UserSearchProps {
 
 #[function_component(UserSearchForm)]
 pub fn user_search_form(props: &UserSearchProps) -> Html {
+    let user_query = use_state(|| "".to_string());
+
     let on_input = {
-        let user_query = props.user_query.clone();
+        let user_query = user_query.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             user_query.set(input.value());
@@ -25,7 +26,7 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
 
     let fetch_user = {
         let api_base = props.api_base.clone();
-        let user_query = props.user_query.clone();
+        let user_query = user_query.clone();
         let found_user = props.found_user.clone();
         let is_loading = props.is_loading.clone();
         let error = props.error.clone();
@@ -90,7 +91,7 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
                 <input
                     type="text"
                     class="form-control"
-                    value={(*(props.user_query)).clone()}
+                    value={(*user_query).clone()}
                     oninput={on_input.clone()}
                     placeholder="Enter username or ID"
                     disabled={*props.is_loading}

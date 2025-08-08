@@ -23,58 +23,11 @@ pub struct UserInfo {
 
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
-    let user_query: UseStateHandle<String> = use_state(|| String::new());
-    let found_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
+    let selected_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
     let is_loading: UseStateHandle<bool> = use_state(|| false);
     let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(|| Vec::<TagCount>::new());
     let error: UseStateHandle<Option<String>> = use_state(|| None::<String>);
     let canvas_ref = use_node_ref();
-
-    let saved_accounts =
-        use_state(
-            || match web_sys::window().and_then(|w| w.local_storage().ok()?) {
-                Some(storage) => match storage.get_item("e621_accounts") {
-                    Ok(Some(accounts_json)) => {
-                        serde_json::from_str::<Vec<UserInfo>>(&accounts_json)
-                            .unwrap_or_else(|_| vec![])
-                    }
-                    _ => vec![],
-                },
-                _ => vec![],
-            },
-        );
-
-    let on_account_select = {
-        let saved_accounts = saved_accounts.clone();
-        let found_user = found_user.clone();
-        let user_query = user_query.clone();
-
-        Callback::from(move |e: Event| {
-            let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
-            let idx = select.selected_index() as usize;
-
-            if idx > 0 {
-                if let Some(account) = saved_accounts.get(idx - 1) {
-                    found_user.set(Some(UserInfo {
-                        id: account.id,
-                        name: account.name.clone(),
-                        api_key: account.api_key.clone(),
-                    }));
-                    user_query.set(account.name.clone());
-                }
-            }
-        })
-    };
-
-    let clear_selection = {
-        let found_user = found_user.clone();
-        let user_query = user_query.clone();
-
-        Callback::from(move |_| {
-            found_user.set(None);
-            user_query.set(String::new());
-        })
-    };
 
     html! {
         <div>
@@ -86,29 +39,25 @@ pub fn home_page() -> Html {
                                 <h1 class="card-title text-center mb-4">{"e621 Tag Analyzer"}</h1>
 
                                 <SavedAccountsSelect
-                                    saved_accounts={(*saved_accounts).clone()}
-                                    selected_user={(*found_user).clone()}
-                                    on_select={on_account_select}
-                                    on_clear={clear_selection}
-                                    is_loading={*is_loading}
+                                    selected_user={selected_user.clone()}
+                                    is_loading={is_loading.clone()}
                                 />
 
                                 <UserSearchForm
-                                    user_query={user_query.clone()}
-                                    found_user={found_user.clone()}
+                                    found_user={selected_user.clone()}
                                     error={error.clone()}
                                     api_base={API_BASE}
                                     is_loading={is_loading.clone()}
                                 />
 
                                 <UserInfoAlert
-                                    user={found_user.clone()}
+                                    user={selected_user.clone()}
                                     error={error.clone()}
                                 />
 
                                 <FetchAnalyzeButton
                                     tag_count={tag_counts.clone()}
-                                    found_user={found_user.clone()}
+                                    found_user={selected_user.clone()}
                                     error={error.clone()}
                                     api_base={API_BASE}
                                     is_loading={is_loading.clone()}
