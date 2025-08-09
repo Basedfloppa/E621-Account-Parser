@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate rocket;
 
+use chrono::Utc;
 use log::info;
 use rocket::serde::json::Json;
 use rusqlite::Result;
@@ -11,7 +12,7 @@ use models::*;
 
 use std::{
     collections::HashMap,
-    io::{Error, ErrorKind},
+    io::ErrorKind,
 };
 
 use crate::rocket::serde::json;
@@ -127,105 +128,73 @@ async fn get_recomendations(
         ("contributor", 0.8),
     ]);
 
-    let tags = match get_tag_counts(account_id) {
-        Ok(counts) => counts.to_vec(),
-        Err(e) => {
-            let error_msg = format!("Failed to get tag counts: {}", e);
-            eprintln!("{}", error_msg);
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("Failed to get tag counts: {}", e),
-            ));
-        }
+    let priors = utils::Priors {
+        now: Utc::now(),
+        recency_tau_days: 14.0,
+        quality_a: 0.01,
+        quality_b: 0.001,
+        mix_sim: 0.7,
+        mix_quality: 0.2,
+        mix_recency: 0.1,
     };
+
+    let tags = get_tag_counts(account_id)
+        .map_err(|e| {
+            std::io::Error::new(ErrorKind::Other, format!("Failed to get tag counts: {}", e))
+        })?
+        .to_vec();
 
     let account = db::get_account_by_id(account_id).unwrap();
     let posts = api::get_posts(&account, page).await;
 
-    let mut result: Vec<(Post, f32)> = Vec::new();
+    let idf: Option<HashMap<&str, f32>> = None;
 
+    let mut scored: Vec<(Post, f32)> = Vec::with_capacity(posts.len());
     for post in posts {
         let mut post_tags: Vec<(String, String)> = Vec::new();
         let tmp_post = post.clone();
-        post_tags.append(
-            &mut post
-                .tags
-                .artist
-                .into_iter()
-                .map(|t| (t, "artist".to_string()))
-                .collect(),
-        );
-        post_tags.append(
-            &mut post
-                .tags
+
+        // flatten tags by group (keep names as-is; consider normalization in #3)
+        post_tags.extend(post.tags.artist.into_iter().map(|t| (t, "artist".into())));
+        post_tags.extend(
+            post.tags
                 .character
                 .into_iter()
-                .map(|t| (t, "character".to_string()))
-                .collect(),
+                .map(|t| (t, "character".into())),
         );
-        post_tags.append(
-            &mut post
-                .tags
+        post_tags.extend(
+            post.tags
                 .contributor
                 .into_iter()
-                .map(|t| (t, "contributor".to_string()))
-                .collect(),
+                .map(|t| (t, "contributor".into())),
         );
-        post_tags.append(
-            &mut post
-                .tags
+        post_tags.extend(
+            post.tags
                 .copyright
                 .into_iter()
-                .map(|t| (t, "copyright".to_string()))
-                .collect(),
+                .map(|t| (t, "copyright".into())),
         );
-        post_tags.append(
-            &mut post
-                .tags
-                .general
-                .into_iter()
-                .map(|t| (t, "general".to_string()))
-                .collect(),
-        );
-        post_tags.append(
-            &mut post
-                .tags
-                .invalid
-                .into_iter()
-                .map(|t| (t, "invalid".to_string()))
-                .collect(),
-        );
-        post_tags.append(
-            &mut post
-                .tags
-                .lore
-                .into_iter()
-                .map(|t| (t, "lore".to_string()))
-                .collect(),
-        );
-        post_tags.append(
-            &mut post
-                .tags
-                .meta
-                .into_iter()
-                .map(|t| (t, "meta".to_string()))
-                .collect(),
-        );
-        post_tags.append(
-            &mut post
-                .tags
-                .species
-                .into_iter()
-                .map(|t| (t, "species".to_string()))
-                .collect(),
-        );
+        post_tags.extend(post.tags.general.into_iter().map(|t| (t, "general".into())));
+        post_tags.extend(post.tags.invalid.into_iter().map(|t| (t, "invalid".into())));
+        post_tags.extend(post.tags.lore.into_iter().map(|t| (t, "lore".into())));
+        post_tags.extend(post.tags.meta.into_iter().map(|t| (t, "meta".into())));
+        post_tags.extend(post.tags.species.into_iter().map(|t| (t, "species".into())));
 
-        let score = utils::post_affinity(&tags, &post_tags, &group_weights, None, None);
+        let score_total: i64 = tmp_post.score.total;
+        let fav_count: i64 = tmp_post.fav_count;
+        let created_at = tmp_post.created_at;
 
-        result.push((tmp_post, score));
+        let s = utils::post_affinity(
+            &tags,
+            &post_tags,
+            &group_weights,
+            idf.as_ref(),
+            Some((&priors, score_total, fav_count, created_at)),
+        );
+        scored.push((tmp_post, s));
     }
 
-    Ok(Json(result))
+    Ok(Json(scored))
 }
 
 #[launch]
