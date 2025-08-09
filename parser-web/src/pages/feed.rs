@@ -14,7 +14,7 @@ const API_BASE: &str = "http://localhost:8080";
 
 #[function_component(FeedPage)]
 pub fn feed_page() -> Html {
-    let posts = use_state(|| Vec::<Post>::new());
+    let posts = use_state(|| Vec::<(Post, f32)>::new());
     let page = use_state(|| 1usize);
     let is_loading = use_state(|| false);
     let error = use_state(|| Option::<String>::None);
@@ -51,18 +51,21 @@ pub fn feed_page() -> Html {
             let has_more = has_more.clone();
 
             spawn_local(async move {
-                match fetch_json::<Vec<Post>>(&url).await {
+                match fetch_json::<Vec<(Post, f32)>>(&url).await {
                     Ok(mut new_items) => {
                         let incoming = new_items.len();
 
                         use std::collections::HashSet;
                         let mut merged = (*posts).clone();
-                        let mut seen: HashSet<i64> = merged.iter().map(|p| p.id).collect();
-                        new_items.retain(|p| seen.insert(p.id));
+                        let mut seen: HashSet<i64> = merged.iter().map(|p| p.0.id).collect();
+                        new_items.retain(|p| seen.insert(p.0.id));
 
                         let added = new_items.len();
                         if added > 0 {
                             merged.extend(new_items);
+
+                            merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
                             posts.set(merged);
                             page.set(*page + 1);
                         }
@@ -91,7 +94,7 @@ pub fn feed_page() -> Html {
         use_effect_with(
             (*selected_user).clone(),
             move |selected: &Option<UserInfo>| {
-                if let Some(u) = selected {
+                if let Some(_) = selected {
                     posts.set(Vec::new());
                     page.set(1);
                     has_more.set(true);
@@ -160,7 +163,7 @@ pub fn feed_page() -> Html {
 
             <div class="row g-3" aria-busy={(*is_loading).to_string()}>
                 {
-                    posts.iter().map(|post| {
+                    posts.iter().map(|(post, _score)| {
                         let p = post.clone();
                         html! {
                             <div key={p.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
@@ -188,7 +191,7 @@ pub fn feed_page() -> Html {
                     if *has_more {
                         html! {
                             <button
-                                class="btn btn-outline-primary"
+                                class="btn btn-primary position-fixed bottom-0 start-50 translate-middle-x mb-4 p-2 z-3"
                                 type="button"
                                 onclick={{
                                     let fetch_page = fetch_page.clone();

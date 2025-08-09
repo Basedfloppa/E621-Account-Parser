@@ -9,7 +9,10 @@ use cors::*;
 use db::*;
 use models::*;
 
-use std::{collections::HashMap, io::{Error, ErrorKind}};
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind},
+};
 
 use crate::rocket::serde::json;
 
@@ -111,7 +114,7 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
 async fn get_recomendations(
     account_id: i32,
     page: Option<i32>,
-) -> Result<Json<Vec<Post>>, std::io::Error> {
+) -> Result<Json<Vec<(Post, f32)>>, std::io::Error> {
     let group_weights = HashMap::from([
         ("artist", 2.0),
         ("character", 1.5),
@@ -141,7 +144,7 @@ async fn get_recomendations(
 
     let mut result: Vec<(Post, f32)> = Vec::new();
 
-    for mut post in posts {
+    for post in posts {
         let mut post_tags: Vec<(String, String)> = Vec::new();
         let tmp_post = post.clone();
         post_tags.append(
@@ -222,8 +225,7 @@ async fn get_recomendations(
         result.push((tmp_post, score));
     }
 
-    result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    Ok(Json(result.into_iter().map(|p| p.0).collect()))
+    Ok(Json(result))
 }
 
 #[launch]
