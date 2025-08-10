@@ -44,9 +44,20 @@ pub fn post_card(props: &PostCardProps) -> Html {
 
     let onclick = {
         let id = post.id;
-        Callback::from(move |_| {
-            if let Some(win) = window() {
-                let _ = win.open_with_url(&format!("{}/posts/{}", models::POST_API_BASE, id));
+        Callback::from(move |e: MouseEvent| {
+            if e.button() == 1 {
+                e.prevent_default();
+                if let Some(win) = window() {
+                    let _ = win.open_with_url_and_target(
+                        &format!("{}/posts/{}", models::POST_API_BASE, id),
+                        "_blank",
+                    );
+                }
+            } else if e.button() == 0 {
+                e.prevent_default();
+                if let Some(win) = window() {
+                    let _ = win.open_with_url(&format!("{}/posts/{}", models::POST_API_BASE, id));
+                }
             }
         })
     };
@@ -118,7 +129,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
         <button
             type="button"
             class={root_classes}
-            onclick={onclick}
+            onmousedown={onclick}
             aria-label={format!("Post {}, rating {:?}, score {}", post.id, post.rating, post.score.total)}
         >
             { inner }
