@@ -1,10 +1,13 @@
-use chrono::Utc;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use rocket::{
     Build, Rocket,
     fairing::{Fairing, Info, Kind},
 };
 use rusqlite::{Connection, Result, params};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use crate::models::{Post, TagAlias, TagCount, TagImplication, TruncatedAccount};
 
@@ -16,9 +19,15 @@ pub struct RelationMaps {
 pub struct DbInit;
 
 const IN_CHUNK: usize = 800;
+const EMPTY_RECHECK_TTL: ChronoDuration = ChronoDuration::days(30);
 
-fn chunk<'a, T: 'a + Clone>(v: &'a [T], size: usize) -> impl Iterator<Item = Vec<T>> + 'a {
-    v.chunks(size).map(|c| c.to_vec())
+#[derive(Debug, Clone)]
+pub struct TagRelationProbe {
+    pub tag: String,
+    pub aliases_last_checked: Option<DateTime<Utc>>,
+    pub aliases_count: i64,
+    pub implications_last_checked: Option<DateTime<Utc>>,
+    pub implications_count: i64,
 }
 
 #[rocket::async_trait]
@@ -39,6 +48,15 @@ impl Fairing for DbInit {
             }
         }
     }
+}
+
+fn chunk<'a, T: 'a + Clone>(v: &'a [T], size: usize) -> impl Iterator<Item = Vec<T>> + 'a {
+    v.chunks(size).map(|c| c.to_vec())
+}
+
+fn parse_rfc3339_opt(s: Option<String>) -> Option<DateTime<Utc>> {
+    s.and_then(|v| chrono::DateTime::parse_from_rfc3339(&v).ok())
+        .map(|dt| dt.with_timezone(&Utc))
 }
 
 fn open_db() -> Result<Connection, String> {
@@ -107,7 +125,6 @@ fn ensure_sqlite() -> Result<(), String> {
         FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
         FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
     ) STRICT;
-    CREATE INDEX IF NOT EXISTS idx_ap_acc_post ON accounts_post(account_id, post_id);
 
     CREATE TABLE IF NOT EXISTS account_tag_counts (
         account_id INTEGER NOT NULL,
@@ -117,16 +134,14 @@ fn ensure_sqlite() -> Result<(), String> {
         PRIMARY KEY(account_id, tag_name, group_type),
         FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
     ) STRICT;
-    CREATE INDEX IF NOT EXISTS idx_atc_acc_group ON account_tag_counts(account_id, group_type);
 
-     CREATE TABLE IF NOT EXISTS tag_aliases (
+    CREATE TABLE IF NOT EXISTS tag_aliases (
         antecedent_name TEXT PRIMARY KEY,
         consequent_name TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('active','deleted','processing','queued','retired','error','pending')),
         created_at TEXT,
         updated_at TEXT
     ) STRICT;
-    CREATE INDEX IF NOT EXISTS idx_tag_aliases_consequent ON tag_aliases(consequent_name);
 
     CREATE TABLE IF NOT EXISTS tag_implications (
         antecedent_name TEXT NOT NULL,
@@ -136,7 +151,14 @@ fn ensure_sqlite() -> Result<(), String> {
         updated_at TEXT,
         PRIMARY KEY(antecedent_name, consequent_name)
     ) STRICT;
-    CREATE INDEX IF NOT EXISTS idx_tag_imps_ante ON tag_implications(antecedent_name);
+    
+    CREATE TABLE IF NOT EXISTS tag_relation_probe (
+        tag TEXT PRIMARY KEY,
+        aliases_last_checked TIMESTAMP,
+        aliases_count INTEGER NOT NULL DEFAULT 0,
+        implications_last_checked TIMESTAMP,
+        implications_count INTEGER NOT NULL DEFAULT 0
+    );
     ",
         )
         .map_err(|e| format!("Failed to execute batch: {e}"))?;
@@ -144,12 +166,16 @@ fn ensure_sqlite() -> Result<(), String> {
     connection
         .execute_batch(
             "
-    CREATE INDEX IF NOT EXISTS idx_tags_name_group ON tags(name, group_type);
-    CREATE INDEX IF NOT EXISTS idx_tp_tag    ON tags_posts(tag_id);
-    CREATE INDEX IF NOT EXISTS idx_tp_post   ON tags_posts(post_id);
-    CREATE INDEX IF NOT EXISTS idx_ap_account ON accounts_post(account_id);
-    CREATE INDEX IF NOT EXISTS idx_ap_post    ON accounts_post(post_id);
-    ",
+            CREATE INDEX IF NOT EXISTS idx_ap_acc_post ON accounts_post(account_id, post_id);
+            CREATE INDEX IF NOT EXISTS idx_atc_acc_group ON account_tag_counts(account_id, group_type);
+            CREATE INDEX IF NOT EXISTS idx_tag_aliases_consequent ON tag_aliases(consequent_name);
+            CREATE INDEX IF NOT EXISTS idx_tag_imps_ante ON tag_implications(antecedent_name);
+            CREATE INDEX IF NOT EXISTS idx_tags_name_group ON tags(name, group_type);
+            CREATE INDEX IF NOT EXISTS idx_tp_tag    ON tags_posts(tag_id);
+            CREATE INDEX IF NOT EXISTS idx_tp_post   ON tags_posts(post_id);
+            CREATE INDEX IF NOT EXISTS idx_ap_account ON accounts_post(account_id);
+            CREATE INDEX IF NOT EXISTS idx_ap_post    ON accounts_post(post_id);
+        ",
         )
         .map_err(|e| format!("Failed to execute batch: {e}"))?;
 
@@ -404,7 +430,7 @@ pub fn get_tag_counts(account_id: i32) -> rusqlite::Result<Vec<TagCount>, String
     Ok(counts)
 }
 
-pub fn upsert_tag_aliases(aliases: &[TagAlias]) -> Result<(), String> {
+pub fn set_tag_aliases(aliases: &[TagAlias]) -> Result<(), String> {
     let mut conn = open_db()?;
     let tx = conn.transaction().map_err(|e| format!("tx: {e}"))?;
 
@@ -442,7 +468,7 @@ pub fn upsert_tag_aliases(aliases: &[TagAlias]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn upsert_tag_implications(imps: &[TagImplication]) -> Result<(), String> {
+pub fn set_tag_implications(imps: &[TagImplication]) -> Result<(), String> {
     let mut conn = open_db()?;
     let tx = conn.transaction().map_err(|e| format!("tx: {e}"))?;
 
@@ -470,18 +496,71 @@ pub fn upsert_tag_implications(imps: &[TagImplication]) -> Result<(), String> {
                 &updated
             ])
             .map_err(|e| format!("imp upsert: {e}"))?;
-
-            if let Some(descs) = &i.descendant_names {
-                for d in descs {
-                    st.execute(params![i.antecedent_name, d, i.status, &created, &updated])
-                        .map_err(|e| format!("imp upsert (desc): {e}"))?;
-                }
-            }
         }
     }
 
     tx.commit().map_err(|e| format!("commit imp upsert: {e}"))?;
     Ok(())
+}
+
+pub fn get_tag_aliases() -> Result<Vec<TagAlias>, String> {
+    let connection = open_db()?;
+    let mut stmt = connection
+        .prepare("SELECT * FROM tag_aliases")
+        .map_err(|e| format!("Failed to construct query: {e}"))?;
+
+    let aliases = stmt
+        .query_map([], |row| {
+            Ok(TagAlias {
+                id: row.get(0)?,
+                antecedent_name: row.get(1)?,
+                consequent_name: row.get(2)?,
+                status: row.get(3)?,
+                created_at: Some(
+                    DateTime::<Utc>::from_str(&row.get::<usize, String>(4)?.to_string())
+                        .unwrap_or_default(),
+                ),
+                updated_at: Some(
+                    DateTime::<Utc>::from_str(&row.get::<usize, String>(4)?.to_string())
+                        .unwrap_or_default(),
+                ),
+            })
+        })
+        .map_err(|e| format!("Failed to get accounts: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to enumerate accounts: {e}"))?;
+
+    Ok(aliases)
+}
+
+pub fn get_tag_implications() -> Result<Vec<TagImplication>, String> {
+    let connection = open_db()?;
+    let mut stmt = connection
+        .prepare("SELECT * FROM tag_implications")
+        .map_err(|e| format!("Failed to construct query: {e}"))?;
+
+    let implications = stmt
+        .query_map([], |row| {
+            Ok(TagImplication {
+                id: row.get(0)?,
+                antecedent_name: row.get(1)?,
+                consequent_name: row.get(2)?,
+                status: row.get(3)?,
+                created_at: Some(
+                    DateTime::<Utc>::from_str(&row.get::<usize, String>(4)?.to_string())
+                        .unwrap_or_default(),
+                ),
+                updated_at: Some(
+                    DateTime::<Utc>::from_str(&row.get::<usize, String>(4)?.to_string())
+                        .unwrap_or_default(),
+                ),
+            })
+        })
+        .map_err(|e| format!("Failed to get accounts: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to enumerate accounts: {e}"))?;
+
+    Ok(implications)
 }
 
 pub fn find_missing_relations(
@@ -537,16 +616,40 @@ pub fn find_missing_relations(
         }
     }
 
+    let probe_map = get_probe_map(tags)?;
+    let now = Utc::now();
+
     let mut miss_alias = Vec::new();
     let mut miss_imp = Vec::new();
+
     for t in tags {
         if !have_alias.contains(t) {
-            miss_alias.push(t.clone());
+            let skip_alias = probe_map
+                .get(t)
+                .and_then(|p| p.aliases_last_checked)
+                .map_or(false, |last| {
+                    probe_map.get(t).unwrap().aliases_count == 0
+                        && now.signed_duration_since(last) <= EMPTY_RECHECK_TTL
+                });
+            if !skip_alias {
+                miss_alias.push(t.clone());
+            }
         }
+
         if !have_imp.contains(t) {
-            miss_imp.push(t.clone());
+            let skip_imp = probe_map
+                .get(t)
+                .and_then(|p| p.implications_last_checked)
+                .map_or(false, |last| {
+                    probe_map.get(t).unwrap().implications_count == 0
+                        && now.signed_duration_since(last) <= EMPTY_RECHECK_TTL
+                });
+            if !skip_imp {
+                miss_imp.push(t.clone());
+            }
         }
     }
+
     Ok((miss_alias, miss_imp))
 }
 
@@ -675,4 +778,80 @@ pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> R
     tx.commit()
         .map_err(|e| format!("commit save_posts_tags_batch_with_maps: {e}"))?;
     Ok(())
+}
+
+pub fn record_alias_probe(tag: &str, count: usize) -> Result<(), String> {
+    let conn = open_db()?;
+    conn.execute(
+        r#"
+        INSERT INTO tag_relation_probe (tag, aliases_last_checked, aliases_count)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(tag) DO UPDATE SET
+          aliases_last_checked = excluded.aliases_last_checked,
+          aliases_count        = excluded.aliases_count
+        "#,
+        params![tag, Utc::now().to_rfc3339(), count as i64],
+    )
+    .map_err(|e| format!("record_alias_probe: {e}"))?;
+    Ok(())
+}
+
+pub fn record_implication_probe(tag: &str, count: usize) -> Result<(), String> {
+    let conn = open_db()?;
+    conn.execute(
+        r#"
+        INSERT INTO tag_relation_probe (tag, implications_last_checked, implications_count)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(tag) DO UPDATE SET
+          implications_last_checked = excluded.implications_last_checked,
+          implications_count        = excluded.implications_count
+        "#,
+        params![tag, Utc::now().to_rfc3339(), count as i64],
+    )
+    .map_err(|e| format!("record_implication_probe: {e}"))?;
+    Ok(())
+}
+
+pub fn get_probe_map(tags: &HashSet<String>) -> Result<HashMap<String, TagRelationProbe>, String> {
+    let mut out = HashMap::new();
+    if tags.is_empty() {
+        return Ok(out);
+    }
+    let conn = open_db()?;
+    let all: Vec<String> = tags.iter().cloned().collect();
+
+    for part in chunk(&all, IN_CHUNK) {
+        let placeholders = std::iter::repeat_n("?", part.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut st = conn
+            .prepare(&format!(
+                r#"
+            SELECT tag, aliases_last_checked, aliases_count,
+                   implications_last_checked, implications_count
+            FROM tag_relation_probe
+            WHERE tag IN ({placeholders})
+            "#
+            ))
+            .map_err(|e| format!("prep probe IN: {e}"))?;
+
+        let rows = st
+            .query_map(rusqlite::params_from_iter(part.iter()), |r| {
+                Ok(TagRelationProbe {
+                    tag: r.get::<_, String>(0)?,
+                    aliases_last_checked: parse_rfc3339_opt(r.get::<_, Option<String>>(1)?),
+                    aliases_count: r.get::<_, i64>(2)?,
+                    implications_last_checked: parse_rfc3339_opt(r.get::<_, Option<String>>(3)?),
+                    implications_count: r.get::<_, i64>(4)?,
+                })
+            })
+            .map_err(|e| format!("probe IN query: {e}"))?;
+
+        for row in rows {
+            let p = row.map_err(|e| format!("probe row: {e}"))?;
+            out.insert(p.tag.clone(), p);
+        }
+    }
+
+    Ok(out)
 }

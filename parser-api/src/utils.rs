@@ -20,16 +20,15 @@ fn sigmoid(x: f32) -> f32 {
 
 pub fn post_affinity(
     account_tag_counts: &[TagCount],
-    post_tags: &[(String, String)],   // (name, group)
-    group_wts: &HashMap<&str, f32>,   // e.g. {"artist":2.0, "character":1.5, ...}
-    idf: Option<&HashMap<&str, f32>>, // optional rarity weights per tag *name*
-    priors: Option<(&Priors, i64, i64, DateTime<Utc>)>, // (priors, score_total, fav_count, created_at)
+    post_tags: &[(String, String)],
+    group_wts: &HashMap<&str, f32>,
+    idf: Option<&HashMap<&str, f32>>,
+    priors: Option<(&Priors, i64, i64, DateTime<Utc>)>,
 ) -> f32 {
     if account_tag_counts.is_empty() || post_tags.is_empty() {
         return 0.0;
     }
 
-    // Build user vector: w_u(tag,group) = log1p(count) * group_weight * idf(tag?)
     let mut user: HashMap<(&str, &str), f32> = HashMap::with_capacity(account_tag_counts.len());
     for t in account_tag_counts {
         if t.count <= 0 {
@@ -38,10 +37,8 @@ pub fn post_affinity(
         let g = t.group_type.as_str();
         let name = t.name.as_str();
 
-        // group weight
         let gw = *group_wts.get(g).unwrap_or(&1.0);
 
-        // idf by *name* (group-agnostic); safe default 1.0
         let iw = idf.and_then(|m| m.get(name)).copied().unwrap_or(1.0);
 
         let w = (t.count as f32).ln_1p() * gw * iw;
@@ -53,22 +50,18 @@ pub fn post_affinity(
         return 0.0;
     }
 
-    // Build post weights: binary presence * group_weight * idf(tag?)
-    // De-dupe by (name, group)
     let mut post: HashMap<(&str, &str), f32> = HashMap::with_capacity(post_tags.len());
     for (name_s, group_s) in post_tags {
         let name = name_s.as_str();
         let g = group_s.as_str();
         let gw = *group_wts.get(g).unwrap_or(&1.0);
         let iw = idf.and_then(|m| m.get(name)).copied().unwrap_or(1.0);
-        // Binary presence → weight is just gw*iw
         post.entry((name, g)).or_insert(gw * iw);
     }
     if post.is_empty() {
         return 0.0;
     }
 
-    // Cosine similarity
     let mut dot: f32 = 0.0;
     let mut u_norm_sq: f32 = 0.0;
     let mut p_norm_sq: f32 = 0.0;
@@ -80,7 +73,6 @@ pub fn post_affinity(
         p_norm_sq += pw * pw;
     }
 
-    // iterate on the sparser side for speed
     let (smaller, other) = if user.len() <= post.len() {
         (&user, &post)
     } else {
@@ -98,12 +90,9 @@ pub fn post_affinity(
         (dot / (u_norm_sq.sqrt() * p_norm_sq.sqrt())).clamp(0.0, 1.0)
     };
 
-    // Optional priors
     if let Some((p, score_total, fav_count, created_at)) = priors {
-        // quality prior
         let quality =
             sigmoid(p.quality_a * (score_total as f32) + p.quality_b * (fav_count as f32));
-        // recency prior
         let age_days = (p.now - created_at).num_seconds() as f32 / 86400.0;
         let recency = (-age_days / p.recency_tau_days.max(1e-3))
             .exp()

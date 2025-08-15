@@ -1,6 +1,5 @@
-use std::rc::Rc;
-
 use serde::de::DeserializeOwned;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{Request, RequestInit, RequestMode, Response};
@@ -14,7 +13,7 @@ const API_BASE: &str = "http://localhost:8080";
 
 #[function_component(FeedPage)]
 pub fn feed_page() -> Html {
-    let posts = use_state(|| Vec::<(Post, f32)>::new());
+    let posts = use_state(Vec::<(Post, f32)>::new);
     let page = use_state(|| 1usize);
     let is_loading = use_state(|| false);
     let error = use_state(|| Option::<String>::None);
@@ -64,7 +63,9 @@ pub fn feed_page() -> Html {
                         if added > 0 {
                             merged.extend(new_items);
 
-                            merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                            merged.sort_by(|a, b| {
+                                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                            });
 
                             posts.set(merged);
                             page.set(*page + 1);
@@ -94,7 +95,7 @@ pub fn feed_page() -> Html {
         use_effect_with(
             (*selected_user).clone(),
             move |selected: &Option<UserInfo>| {
-                if let Some(_) = selected {
+                if selected.is_some() {
                     posts.set(Vec::new());
                     page.set(1);
                     has_more.set(true);
@@ -230,11 +231,11 @@ async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
     opts.set_mode(RequestMode::Cors);
 
     let request = Request::new_with_str_and_init(url, &opts)
-        .map_err(|e| format!("Failed to create request: {:?}", e))?;
+        .map_err(|e| format!("Failed to create request: {e:?}"))?;
 
     let resp_value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request))
         .await
-        .map_err(|e| format!("Fetch promise rejected: {:?}", e))?;
+        .map_err(|e| format!("Fetch promise rejected: {e:?}"))?;
 
     let resp: Response = resp_value
         .dyn_into()
@@ -250,10 +251,10 @@ async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
 
     let text_promise = resp
         .text()
-        .map_err(|e| format!("Failed to read response text: {:?}", e))?;
+        .map_err(|e| format!("Failed to read response text: {e:?}"))?;
     let text_js = wasm_bindgen_futures::JsFuture::from(text_promise)
         .await
-        .map_err(|e| format!("Text promise rejected: {:?}", e))?;
+        .map_err(|e| format!("Text promise rejected: {e:?}"))?;
     let text = text_js
         .as_string()
         .ok_or("Response text not a string".to_string())?;

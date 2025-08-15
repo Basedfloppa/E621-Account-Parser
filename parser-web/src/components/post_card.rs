@@ -94,7 +94,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
                 <span
                     class={classes!(rating_classes, "position-absolute", "top-0", "start-0", "m-2")}
                     title="Rating"
-                    aria-label={format!("Rating {}", rating_label)}
+                    aria-label={format!("Rating {rating_label}")}
                 >
                     { rating_label }
                 </span>
@@ -102,7 +102,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
                 <span
                     class="badge bg-dark position-absolute bottom-0 end-0 m-2"
                     title={score_detail}
-                    aria-label={format!("Score {}", score_summary)}
+                    aria-label={format!("Score {score_summary}")}
                 >
                     { score_summary }
                 </span>

@@ -1,12 +1,11 @@
+use components::*;
+use pages::*;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-mod models;
 mod components;
+mod models;
 mod pages;
-
-use components::*;
-use pages::*;
 
 #[derive(Clone, Routable, PartialEq)]
 enum Route {

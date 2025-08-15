@@ -1,5 +1,7 @@
 use reqwasm::http::Request;
-use yew::{function_component, html, use_state, Callback, Html, MouseEvent, Properties, UseStateHandle};
+use yew::{
+    Callback, Html, MouseEvent, Properties, UseStateHandle, function_component, html, use_state,
+};
 
 use crate::pages::{TagCount, UserInfo};
 
@@ -56,7 +58,7 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                                     error.set(None);
                                 }
                                 Err(e) => {
-                                    error.set(Some(format!("Failed to parse tag data: {}", e)));
+                                    error.set(Some(format!("Failed to parse tag data: {e}")));
                                 }
                             }
                         } else {
@@ -65,11 +67,11 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Error {}: {}", status, text)));
+                            error.set(Some(format!("Error {status}: {text}")));
                         }
                     }
                     Err(e) => {
-                        error.set(Some(format!("Network error: {}", e)));
+                        error.set(Some(format!("Network error: {e}")));
                     }
                 }
 
@@ -117,18 +119,18 @@ pub fn fetch_analyze_button(props: &AnalyzeButtonProps) -> Html {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".into());
-                            error.set(Some(format!("Processing error {}: {}", status, text)));
+                            error.set(Some(format!("Processing error {status}: {text}")));
                         }
                     }
                     Err(e) => {
-                        error.set(Some(format!("Processing error: {}", e)));
+                        error.set(Some(format!("Processing error: {e}")));
                     }
                 }
                 is_analyzing.set(false);
                 is_loading.set(false);
 
                 if let Ok(synthetic_event) = MouseEvent::new("click") {
-                    fetch_tags.emit(MouseEvent::from(synthetic_event));
+                    fetch_tags.emit(synthetic_event);
                 } else {
                     error.set(Some("Failed to trigger fetch after analysis".to_string()));
                 }

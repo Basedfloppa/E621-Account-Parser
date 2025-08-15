@@ -19,7 +19,7 @@ pub struct TagChartCardProps {
 #[function_component(TagChartCard)]
 pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     let theme_trigger = use_state(|| 0);
-    let selected_group = use_state(|| String::new());
+    let selected_group = use_state(String::new);
     let resize_trigger = use_state(|| 0);
 
     let current_tags = use_memo(
@@ -121,7 +121,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
         ),
         |(canvas_ref, current_tags, _, _)| {
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                draw_chart(&canvas, &current_tags);
+                draw_chart(&canvas, current_tags);
             }
             || ()
         },

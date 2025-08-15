@@ -1,16 +1,17 @@
 use reqwasm::http::Request;
-use web_sys::{HtmlInputElement, window};
 use serde_json::to_string;
+use web_sys::{HtmlInputElement, window};
 use yew::prelude::*;
 
+use crate::models::API_BASE;
 use crate::pages::UserInfo;
 
 #[function_component(Account)]
 pub fn account_creator() -> Html {
-    let id = use_state(|| String::new());
-    let name = use_state(|| String::new());
-    let api_key = use_state(|| String::new());
-    let message = use_state(|| String::new());
+    let id = use_state(String::new);
+    let name = use_state(String::new);
+    let api_key = use_state(String::new);
+    let message = use_state(String::new);
     let error = use_state(|| false);
     let loading = use_state(|| false);
 
@@ -66,7 +67,6 @@ pub fn account_creator() -> Html {
 
             let mut acocunt_copy = saved_accounts.clone().to_vec();
 
-            // Validate inputs
             if id.is_empty() || name.is_empty() || api_key.is_empty() {
                 message.set("All fields are required".to_string());
                 error.set(true);
@@ -84,21 +84,18 @@ pub fn account_creator() -> Html {
                 }
             };
 
-            // Prepare account data
             let account = UserInfo {
                 id: account_id,
                 name: name.to_string(),
                 api_key: api_key.to_string(),
             };
 
-            // Clone state for async closure
             let message = message.clone();
             let error = error.clone();
             let loading = loading.clone();
 
-            // Make API request with reqwasm
             wasm_bindgen_futures::spawn_local(async move {
-                let response = Request::post("http://localhost:8080/account")
+                let response = Request::post(&format!("{API_BASE}/account"))
                     .header("Content-Type", "application/json")
                     .body(serde_json::to_string(&account).unwrap())
                     .send()
@@ -113,9 +110,15 @@ pub fn account_creator() -> Html {
 
                             acocunt_copy.push(account);
 
-                            let _ = window().unwrap()
-                            .local_storage().unwrap().unwrap()
-                            .set_item("e621_accounts", to_string(&acocunt_copy).unwrap().as_str());
+                            let _ = window()
+                                .unwrap()
+                                .local_storage()
+                                .unwrap()
+                                .unwrap()
+                                .set_item(
+                                    "e621_accounts",
+                                    to_string(&acocunt_copy).unwrap().as_str(),
+                                );
 
                             error.set(false);
                         } else {
@@ -132,7 +135,7 @@ pub fn account_creator() -> Html {
                         }
                     }
                     Err(e) => {
-                        message.set(format!("Network error: {}", e));
+                        message.set(format!("Network error: {e}"));
                         error.set(true);
                     }
                 }

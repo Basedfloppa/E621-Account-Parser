@@ -5,9 +5,12 @@ use std::time::Duration;
 use tokio::time::sleep;
 use urlencoding::encode;
 
-use crate::models::{
-    Post, PostsApiResponse, TagAlias, TagAliasesApiResponse, TagImplication,
-    TagImplicationsApiResponse, TruncatedAccount, UserApiResponse,
+use crate::{
+    db::{record_alias_probe, record_implication_probe},
+    models::{
+        Post, PostsApiResponse, TagAlias, TagAliasesApiResponse, TagImplication,
+        TagImplicationsApiResponse, TruncatedAccount, UserApiResponse,
+    },
 };
 
 pub const LIMIT: i32 = 320;
@@ -161,6 +164,7 @@ pub async fn fetch_tag_aliases_for(name: &str) -> Result<Vec<TagAlias>, String> 
     let all = parsed.into_vec();
     let total = all.len();
     let active: Vec<TagAlias> = all.into_iter().filter(|a| a.status == "active").collect();
+    record_alias_probe(name, active.len())?;
     info!(
         "Tag aliases fetched: total={}, active={}",
         total,
@@ -196,6 +200,7 @@ pub async fn fetch_tag_implications_for(name: &str) -> Result<Vec<TagImplication
     let all = parsed.into_vec();
     let total = all.len();
     let active: Vec<TagImplication> = all.into_iter().filter(|i| i.status == "active").collect();
+    record_implication_probe(name, active.len())?;
     info!(
         "Tag implications fetched: total={}, active={}",
         total,

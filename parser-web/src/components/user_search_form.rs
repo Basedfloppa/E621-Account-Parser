@@ -1,6 +1,8 @@
 use reqwasm::http::Request;
 use web_sys::{HtmlInputElement, InputEvent}; // <-- from web_sys
-use yew::{function_component, html, use_state, Callback, Html, Properties, TargetCast, UseStateHandle};
+use yew::{
+    Callback, Html, Properties, TargetCast, UseStateHandle, function_component, html, use_state,
+};
 
 use crate::pages::UserInfo;
 
@@ -14,7 +16,7 @@ pub struct UserSearchProps {
 
 #[function_component(UserSearchForm)]
 pub fn user_search_form(props: &UserSearchProps) -> Html {
-    let user_query = use_state(|| String::new());
+    let user_query = use_state(String::new);
 
     let on_input = {
         let user_query = user_query.clone();
@@ -50,9 +52,9 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
             };
 
             let url = if is_id {
-                format!("{}/user/id/{}", api_base, encoded)
+                format!("{api_base}/user/id/{encoded}")
             } else {
-                format!("{}/user/name/{}", api_base, encoded)
+                format!("{api_base}/user/name/{encoded}")
             };
 
             let found_user = found_user.clone();
@@ -74,7 +76,10 @@ pub fn user_search_form(props: &UserSearchProps) -> Html {
                             }
                         } else {
                             let status = response.status();
-                            let text = response.text().await.unwrap_or_else(|_| "Unknown error".into());
+                            let text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".into());
                             error.set(Some(format!("Error {status}: {text}")));
                         }
                     }

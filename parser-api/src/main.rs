@@ -1,26 +1,38 @@
 #[macro_use]
 extern crate rocket;
 
+use anyhow::Context;
+use arc_swap::ArcSwap;
 use chrono::Utc;
 use log::info;
 use moka::sync::Cache;
-use rocket::State;
-use rocket::serde::json::Json;
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use rocket::{State, serde::json::Json};
 use rusqlite::Result;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{Semaphore, mpsc};
-use tokio::task::JoinSet;
+use serde::Deserialize;
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
+    sync::{Arc, LazyLock},
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
+};
+use tokio::{
+    sync::{Semaphore, mpsc},
+    task::JoinSet,
+};
 
 use crate::{
     cors::Cors,
     db::{
         DbInit, find_missing_relations, get_account_by_id, get_account_by_name, get_tag_counts,
-        set_account, set_tag_counts, upsert_tag_aliases, upsert_tag_implications,
+        set_account, set_tag_aliases, set_tag_counts, set_tag_implications,
     },
     models::{Post, TagCount, TruncatedAccount, UserApiResponse},
     rocket::serde::json,
+    utils::Priors,
 };
 
 mod api;
@@ -32,6 +44,115 @@ mod utils;
 const QUEUE_CAP: usize = 10_000;
 const BATCH_SIZE: usize = 500;
 const DEDUP_TTL_SECS: u64 = 60 * 30;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    pub db_url: String,
+    pub port: u16,
+}
+
+static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
+    let p = default_path().expect("config path");
+    let cfg = load_config(&p).expect("initial config");
+    ArcSwap::from_pointee(cfg)
+});
+
+struct ConfigWatcher {
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl Drop for ConfigWatcher {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+fn load_config(p: &Path) -> anyhow::Result<Config> {
+    let s = fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
+    toml::from_str(&s).context("parsing config.toml")
+}
+
+fn default_path() -> anyhow::Result<PathBuf> {
+    Ok(PathBuf::from("config.toml"))
+}
+
+pub fn cfg() -> Arc<Config> {
+    CONFIG.load_full()
+}
+
+pub fn reload_from(p: &Path) -> anyhow::Result<()> {
+    let new = load_config(p)?;
+    CONFIG.store(Arc::new(new));
+    Ok(())
+}
+
+fn start_config_watcher(path: PathBuf) -> anyhow::Result<ConfigWatcher> {
+    let parent = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_flag = stop.clone();
+
+    let handle = thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel::<notify::Result<Event>>();
+
+        let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        })
+        .expect("create watcher");
+
+        watcher
+            .watch(&parent, RecursiveMode::NonRecursive)
+            .expect("watch parent");
+
+        let mut last_mtime: Option<SystemTime> = file_mtime(&path).ok();
+
+        while !stop_flag.load(Ordering::Relaxed) {
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Ok(event)) => {
+                    if event
+                        .paths
+                        .iter()
+                        .any(|p| p == &path || p.file_name() == path.file_name())
+                    {
+                        thread::sleep(Duration::from_millis(120));
+
+                        if let Ok(mtime) = file_mtime(&path) {
+                            if last_mtime.map_or(true, |old| old < mtime) {
+                                match reload_from(&path) {
+                                    Ok(_) => {
+                                        last_mtime = Some(mtime);
+                                        eprintln!("[config] reloaded {}", path.display());
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[config] reload failed: {e:#}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Err(e)) => eprintln!("[config] watch error: {e}"),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    });
+
+    Ok(ConfigWatcher {
+        stop,
+        handle: Some(handle),
+    })
+}
+
+fn file_mtime(p: &Path) -> std::io::Result<SystemTime> {
+    fs::metadata(p)?.modified()
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -88,15 +209,13 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
             });
         }
 
-        info!("upserting");
         while let Some(res) = jobs.join_next().await {
             let (tag, result) = res.map_err(|e| format!("alias task join: {e}"))?;
             match result {
-                Ok(list) => upsert_tag_aliases(&list)?,
+                Ok(list) => set_tag_aliases(&list)?,
                 Err(err) => eprintln!("warn: alias fetch failed for {tag}: {err}"),
             }
         }
-        info!("finished");
     }
 
     {
@@ -115,7 +234,7 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
         while let Some(res) = jobs.join_next().await {
             let (tag, result) = res.map_err(|e| format!("imp task join: {e}"))?;
             match result {
-                Ok(list) => upsert_tag_implications(&list)?,
+                Ok(list) => set_tag_implications(&list)?,
                 Err(err) => eprintln!("warn: implication fetch failed for {tag}: {err}"),
             }
         }
@@ -243,7 +362,7 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
 }
 
 #[get("/recommendations/<account_id>?<page>")]
-async fn get_recomendations(
+async fn get_recommendations(
     account_id: i32,
     page: Option<i32>,
 ) -> Result<Json<Vec<(Post, f32)>>, std::io::Error> {
@@ -258,8 +377,7 @@ async fn get_recomendations(
         ("lore", 0.6),
         ("contributor", 0.8),
     ]);
-
-    let priors = utils::Priors {
+    let priors = Priors {
         now: Utc::now(),
         recency_tau_days: 14.0,
         quality_a: 0.01,
@@ -269,12 +387,13 @@ async fn get_recomendations(
         mix_recency: 0.1,
     };
 
-    let tags = get_tag_counts(account_id)
+    let tags: Vec<TagCount> = get_tag_counts(account_id)
         .map_err(|e| std::io::Error::other(format!("Failed to get tag counts: {e}")))?
         .to_vec();
 
-    let account = db::get_account_by_id(account_id).unwrap();
-    let posts = api::get_posts(&account, page).await;
+    let account = db::get_account_by_id(account_id)
+        .map_err(|e| std::io::Error::other(format!("Failed to get account: {e}")))?;
+    let posts: Vec<Post> = api::get_posts(&account, page).await;
 
     let idf: Option<HashMap<&str, f32>> = None;
 
@@ -319,6 +438,7 @@ async fn get_recomendations(
             idf.as_ref(),
             Some((&priors, score_total, fav_count, created_at)),
         );
+
         scored.push((tmp_post, s));
     }
 
@@ -327,6 +447,10 @@ async fn get_recomendations(
 
 #[launch]
 async fn rocket() -> _ {
+    let path = default_path().unwrap();
+    let _ = reload_from(&path);
+    let _watcher = start_config_watcher(path).unwrap();
+
     let (tx, rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
     let dedup = Cache::builder()
@@ -346,7 +470,7 @@ async fn rocket() -> _ {
                 get_account_id,
                 get_account_name,
                 create_account,
-                get_recomendations,
+                get_recommendations,
             ],
         )
         .attach(Cors)

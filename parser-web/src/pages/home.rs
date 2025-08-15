@@ -21,7 +21,7 @@ pub struct UserInfo {
 pub fn home_page() -> Html {
     let selected_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
     let is_loading: UseStateHandle<bool> = use_state(|| false);
-    let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(|| Vec::<TagCount>::new());
+    let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(Vec::<TagCount>::new);
     let error: UseStateHandle<Option<String>> = use_state(|| None::<String>);
     let canvas_ref = use_node_ref();
 
