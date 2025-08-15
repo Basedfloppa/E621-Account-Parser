@@ -73,7 +73,7 @@ async fn refresh_relations_chunk(tags: &[String]) -> Result<(), String> {
 async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String> {
     let (miss_alias, miss_imp) = find_missing_relations(tags)?;
 
-    let con_limit = 8usize;
+    let con_limit = 10usize;
 
     {
         let sem = Arc::new(Semaphore::new(con_limit));
