@@ -1,5 +1,62 @@
+use std::fmt::{self};
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TagAlias {
+    pub id: i64,
+    pub antecedent_name: String,
+    pub consequent_name: String,
+    pub status: String,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum TagAliasesApiResponse {
+    Wrapped { tag_aliases: Vec<TagAlias> },
+    Direct(Vec<TagAlias>),
+}
+
+impl TagAliasesApiResponse {
+    pub fn into_vec(self) -> Vec<TagAlias> {
+        match self {
+            TagAliasesApiResponse::Wrapped { tag_aliases } => tag_aliases,
+            TagAliasesApiResponse::Direct(v) => v,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TagImplication {
+    pub id: i64,
+    pub antecedent_name: String,
+    pub consequent_name: String,
+    pub status: String,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub descendant_names: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum TagImplicationsApiResponse {
+    Wrapped {
+        tag_implications: Vec<TagImplication>,
+    },
+    Direct(Vec<TagImplication>),
+}
+
+impl TagImplicationsApiResponse {
+    pub fn into_vec(self) -> Vec<TagImplication> {
+        match self {
+            TagImplicationsApiResponse::Wrapped { tag_implications } => tag_implications,
+            TagImplicationsApiResponse::Direct(v) => v,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct TagCount {
@@ -12,7 +69,7 @@ pub struct TagCount {
 #[serde(untagged)]
 pub enum UserApiResponse {
     FullCurrentUser(FullCurrentUser),
-    FullUser(FullUser),    
+    FullUser(FullUser),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -154,21 +211,6 @@ pub struct Post {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct TruncatedPost {
-    pub id: i64,
-    pub tags: Tags,
-}
-
-impl From<&Post> for TruncatedPost {
-    fn from(post: &Post) -> Self {
-        TruncatedPost {
-            id: post.id,
-            tags: post.tags.clone(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone)]
 pub struct FileInfo {
     pub width: i64,
     pub height: i64,
@@ -262,6 +304,16 @@ pub enum Rating {
     S,
     Q,
     E,
+}
+
+impl fmt::Display for Rating {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Rating::S => write!(f, "s"),
+            Rating::Q => write!(f, "q"),
+            Rating::E => write!(f, "e"),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
