@@ -57,6 +57,11 @@ static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
     ArcSwap::from_pointee(cfg)
 });
 
+#[derive(Clone)]
+struct AppState {
+    tx: mpsc::Sender<Vec<String>>,
+}
+
 struct ConfigWatcher {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -78,16 +83,6 @@ fn load_config(p: &Path) -> anyhow::Result<Config> {
 
 fn default_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from("config.toml"))
-}
-
-pub fn cfg() -> Arc<Config> {
-    CONFIG.load_full()
-}
-
-pub fn reload_from(p: &Path) -> anyhow::Result<()> {
-    let new = load_config(p)?;
-    CONFIG.store(Arc::new(new));
-    Ok(())
 }
 
 fn start_config_watcher(path: PathBuf) -> anyhow::Result<ConfigWatcher> {
@@ -154,9 +149,14 @@ fn file_mtime(p: &Path) -> std::io::Result<SystemTime> {
     fs::metadata(p)?.modified()
 }
 
-#[derive(Clone)]
-struct AppState {
-    tx: mpsc::Sender<Vec<String>>,
+pub fn cfg() -> Arc<Config> {
+    CONFIG.load_full()
+}
+
+pub fn reload_from(p: &Path) -> anyhow::Result<()> {
+    let new = load_config(p)?;
+    CONFIG.store(Arc::new(new));
+    Ok(())
 }
 
 async fn relations_worker(mut rx: mpsc::Receiver<Vec<String>>, dedup: Cache<String, ()>) {
@@ -303,7 +303,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
 }
 
 #[get("/account/<account_id>/tag_counts")]
-fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String> {
+async fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String> {
     match get_tag_counts(account_id) {
         Ok(counts) => Ok(Json(counts.to_vec())),
         Err(e) => {
@@ -315,7 +315,7 @@ fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String
 }
 
 #[get("/user/name/<name>")]
-fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> {
+async fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> {
     match get_account_by_name(name.to_string()) {
         Ok(account) => Ok(Json(account)),
         Err(e) => {
@@ -327,7 +327,7 @@ fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> {
 }
 
 #[get("/user/id/<id>")]
-fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
+async fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
     match get_account_by_id(id) {
         Ok(account) => Ok(Json(account)),
         Err(e) => {
@@ -361,10 +361,11 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     }
 }
 
-#[get("/recommendations/<account_id>?<page>")]
+#[get("/recommendations/<account_id>?<page>&<affinity_threshold>")]
 async fn get_recommendations(
     account_id: i32,
     page: Option<i32>,
+    affinity_threshold: Option<f32>,
 ) -> Result<Json<Vec<(Post, f32)>>, std::io::Error> {
     let group_weights = HashMap::from([
         ("artist", 2.0),
@@ -440,6 +441,10 @@ async fn get_recommendations(
         );
 
         scored.push((tmp_post, s));
+    }
+
+    if let Some(threshold) = affinity_threshold {
+        scored.retain(|(_, s)| *s >= threshold);
     }
 
     Ok(Json(scored))

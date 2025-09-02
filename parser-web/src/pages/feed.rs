@@ -2,6 +2,7 @@ use serde::de::DeserializeOwned;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::{HtmlInputElement, Node};
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use yew::prelude::*;
 
@@ -19,6 +20,7 @@ pub fn feed_page() -> Html {
     let error = use_state(|| Option::<String>::None);
     let has_more = use_state(|| true);
     let selected_user = use_state(|| Option::<UserInfo>::None);
+    let affinity_input: NodeRef = NodeRef::default();
 
     let fetch_page = {
         let posts = posts.clone();
@@ -27,6 +29,7 @@ pub fn feed_page() -> Html {
         let error = error.clone();
         let has_more = has_more.clone();
         let selected_user = selected_user.clone();
+        let affinity_input = affinity_input.clone();
 
         Callback::from(move |_| {
             if *is_loading {
@@ -38,7 +41,20 @@ pub fn feed_page() -> Html {
                 return;
             };
 
-            let url = format!("{API_BASE}/recommendations/{}?page={}", user.id, *page);
+            let mut url = format!("{API_BASE}/recommendations/{}?page={}", user.id, *page);
+
+            let affinity_value = affinity_input
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value()
+                .parse::<f32>();
+
+            if affinity_value.is_ok() {
+                let value = affinity_value.unwrap();
+                if value > 0.0 {
+                    url.push_str(&format!("&affinity_threshold={}", &value));
+                }
+            }
 
             is_loading.set(true);
             error.set(None);
@@ -109,13 +125,17 @@ pub fn feed_page() -> Html {
     }
 
     html! {
-        <div class="container my-4">
+        <div class="container my-4 gap-2">
             <h2 class="mb-3">{ "Latest Posts" }</h2>
 
             <SavedAccountsSelect
                 selected_user={selected_user.clone()}
                 is_loading={is_loading.clone()}
             />
+
+            <label>{"Minimal affinity"}
+            <input type="number" class="form-control" ref={affinity_input} value="0.0" />
+            </label>
 
             <div class="d-flex align-items-center justify-content-between mb-3">
                 {
