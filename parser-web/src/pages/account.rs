@@ -10,6 +10,7 @@ use crate::pages::UserInfo;
 pub fn account_creator() -> Html {
     let id = use_state(String::new);
     let name = use_state(String::new);
+    let blacklist = use_state(String::new);
     let message = use_state(String::new);
     let error = use_state(|| false);
     let loading = use_state(|| false);
@@ -44,27 +45,39 @@ pub fn account_creator() -> Html {
         })
     };
 
+    let on_blacklist_change = {
+        let blacklist = blacklist.clone();
+        Callback::from(move |e: Event| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            blacklist.set(input.value());
+        })
+    };
+
     let onsubmit = {
         let id = id.clone();
         let name = name.clone();
+        let blacklist = blacklist.clone();
         let message = message.clone();
         let error = error.clone();
         let loading = loading.clone();
+        let saved_accounts = saved_accounts.clone();
 
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
             loading.set(true);
 
-            let mut acocunt_copy = saved_accounts.clone().to_vec();
+            let raw_id = id.trim().to_string();
+            let raw_name = name.trim().to_string();
+            let raw_blacklist = blacklist.trim().to_string();
 
-            if id.is_empty() || name.is_empty() {
+            if raw_id.is_empty() || raw_name.is_empty() {
                 message.set("All fields are required".to_string());
                 error.set(true);
                 loading.set(false);
                 return;
             }
 
-            let account_id = match id.parse::<i64>() {
+            let account_id = match raw_id.parse::<i64>() {
                 Ok(id) => id,
                 Err(_) => {
                     message.set("Invalid account ID. Must be a number".to_string());
@@ -74,14 +87,27 @@ pub fn account_creator() -> Html {
                 }
             };
 
+            let exists = (*saved_accounts)
+                .iter()
+                .any(|u| u.id == account_id || u.name.eq_ignore_ascii_case(&raw_name));
+
+            if exists {
+                message.set("An account with this ID or Username already exists.".to_string());
+                error.set(true);
+                loading.set(false);
+                return;
+            }
+
             let account = UserInfo {
                 id: account_id,
-                name: name.to_string(),
+                name: raw_name.clone(),
+                blacklist: raw_blacklist.clone(),
             };
 
             let message = message.clone();
             let error = error.clone();
             let loading = loading.clone();
+            let mut saved_accounts = saved_accounts.clone().to_vec();
 
             wasm_bindgen_futures::spawn_local(async move {
                 let response = Request::post(&format!("{API_BASE}/account"))
@@ -97,7 +123,7 @@ pub fn account_creator() -> Html {
                         if resp.status() >= 200 && resp.status() < 300 {
                             message.set("Account created successfully!".to_string());
 
-                            acocunt_copy.push(account);
+                            saved_accounts.push(account);
 
                             let _ = window()
                                 .unwrap()
@@ -106,7 +132,7 @@ pub fn account_creator() -> Html {
                                 .unwrap()
                                 .set_item(
                                     "e621_accounts",
-                                    to_string(&acocunt_copy).unwrap().as_str(),
+                                    to_string(&saved_accounts).unwrap().as_str(),
                                 );
 
                             error.set(false);
@@ -128,6 +154,8 @@ pub fn account_creator() -> Html {
                         error.set(true);
                     }
                 }
+
+                loading.set(false);
             });
         })
     };
@@ -170,6 +198,19 @@ pub fn account_creator() -> Html {
                                         value={(*name).clone()}
                                         onchange={on_name_change}
                                         placeholder="Enter your username"
+                                        disabled={*loading}
+                                    />
+                                </div>
+
+                                 <div class="mb-3">
+                                    <label for="account-blacklist" class="form-label">{"Blacklist"}</label>
+                                    <textarea
+                                        type="text-area"
+                                        class="form-control"
+                                        id="account-blacklist"
+                                        value={(*blacklist).clone()}
+                                        onchange={on_blacklist_change}
+                                        placeholder="Enter your blacklisted tags, each one on the separate line"
                                         disabled={*loading}
                                     />
                                 </div>

@@ -341,13 +341,7 @@ async fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
 
 #[post("/account", data = "<account>")]
 async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
-    let user = api::get_account(&account).await;
-    let blacklisted_tags = match user {
-        UserApiResponse::FullCurrentUser(u) => u.blacklisted_tags,
-        UserApiResponse::FullUser(_) => "".to_string(),
-    };
-
-    match set_account(account.id, &account.name, &blacklisted_tags) {
+    match set_account(account.id, &account.name, &account.blacklist) {
         Ok(_) => Ok(()),
         Err(e) => {
             let error_msg = format!("Failed to get account: {e}");

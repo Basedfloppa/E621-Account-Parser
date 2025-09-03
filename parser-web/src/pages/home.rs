@@ -14,6 +14,7 @@ pub struct TagCount {
 pub struct UserInfo {
     pub id: i64,
     pub name: String,
+    pub blacklist: String,
 }
 
 #[function_component(HomePage)]

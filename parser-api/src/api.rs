@@ -263,7 +263,7 @@ pub async fn get_account(account: &TruncatedAccount) -> UserApiResponse {
 }
 
 pub async fn get_posts(account: &TruncatedAccount, page: Option<i32>) -> Vec<Post> {
-    let blacklisted_tags = account.blacklisted_tags.clone().unwrap_or_default();
+    let blacklisted_tags = account.blacklist.clone();
     let blacklist = if blacklisted_tags.trim().is_empty() {
         String::new()
     } else {

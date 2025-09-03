@@ -43,7 +43,7 @@ pub struct FullUser {
 pub struct TruncatedAccount {
     pub id: i32,
     pub name: String,
-    pub blacklisted_tags: Option<String>,
+    pub blacklist: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

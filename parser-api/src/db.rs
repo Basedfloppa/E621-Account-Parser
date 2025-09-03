@@ -105,7 +105,6 @@ fn ensure_sqlite() -> Result<(), String> {
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        api_key TEXT NOT NULL,
         blacklisted_tags TEXT,
         UNIQUE(id, name)
     ) STRICT;
@@ -196,7 +195,7 @@ pub fn set_account(account_id: i32, name: &str, mut blacklisted_tags: &str) -> R
         .execute(
             "
             INSERT INTO accounts (id, name, blacklisted_tags) 
-            VALUES (?1, ?2, ?4)
+            VALUES (?1, ?2, ?3)
             ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             blacklisted_tags = excluded.blacklisted_tags",
@@ -213,7 +212,7 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount, S
     let mut stmt = conn
         .prepare(
             r#"
-        SELECT a.id, a.name, a.api_key, a.blacklisted_tags
+        SELECT a.id, a.name, a.blacklisted_tags
         FROM accounts a
         WHERE a.name = ?
         "#,
@@ -225,7 +224,7 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount, S
             Ok(TruncatedAccount {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                blacklisted_tags: row.get(3)?,
+                blacklist: row.get(2)?,
             })
         })
         .map_err(|e| format!("Failed to get accounts: {e}"))?
@@ -245,7 +244,7 @@ pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount, String> 
     let mut stmt = conn
         .prepare(
             r#"
-        SELECT a.id, a.name, a.api_key, a.blacklisted_tags
+        SELECT a.id, a.name, a.blacklisted_tags
         FROM accounts a
         WHERE a.id = ?
         "#,
@@ -257,7 +256,7 @@ pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount, String> 
             Ok(TruncatedAccount {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                blacklisted_tags: row.get(3)?,
+                blacklist: row.get(2)?,
             })
         })
         .map_err(|e| format!("Failed to get accounts: {e}"))?
