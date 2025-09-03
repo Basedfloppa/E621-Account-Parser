@@ -7,6 +7,7 @@ use crate::models::{self, *};
 #[derive(Properties, PartialEq)]
 pub struct PostCardProps {
     pub post: Rc<Post>,
+    pub affinity: f32,
     #[prop_or_default]
     pub alt: Option<AttrValue>,
 }
@@ -100,9 +101,13 @@ pub fn post_card(props: &PostCardProps) -> Html {
                 </span>
 
                 <span
-                    class="badge bg-dark position-absolute bottom-0 end-0 m-2"
+                    class={classes!("badge", "rounded","bg-secondary","position-absolute", "top-0", "end-0", "m-2")} >
+                    { format!("{:.2}",&props.affinity) }
+                </span>
+
+                <span
+                    class={classes!("badge", "position-absolute", "bottom-0", "end-0", "m-2", if score_summary > 0 {"bg-success"} else {"bg-danger"})}
                     title={score_detail}
-                    aria-label={format!("Score {score_summary}")}
                 >
                     { score_summary }
                 </span>
@@ -130,7 +135,10 @@ pub fn post_card(props: &PostCardProps) -> Html {
             type="button"
             class={root_classes}
             onmousedown={onclick}
-            aria-label={format!("Post {}, rating {:?}, score {}", post.id, post.rating, post.score.total)}
+            aria-label={format!(
+                "Post {}, rating {:?}, score {}, affinity {}",
+                post.id, post.rating, post.score.total, &props.affinity
+            )}
         >
             { inner }
         </button>

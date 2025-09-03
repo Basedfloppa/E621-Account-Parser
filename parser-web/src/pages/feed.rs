@@ -188,7 +188,7 @@ pub fn feed_page() -> Html {
                         let p = post.clone();
                         html! {
                             <div key={p.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
-                                <PostCard post={Rc::new(p)}/>
+                                <PostCard affinity={_score} post={Rc::new(p)}/>
                             </div>
                         }
                     }).collect::<Html>()
