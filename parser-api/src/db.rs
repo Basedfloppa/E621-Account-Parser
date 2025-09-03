@@ -182,10 +182,24 @@ fn ensure_sqlite() -> Result<(), String> {
     Ok(())
 }
 
-pub fn set_account(account_id: i32, name: &str, blacklisted_tags: &str) -> Result<(), String> {
+pub fn set_account(account_id: i32, name: &str, mut blacklisted_tags: &str) -> Result<(), String> {
+    if blacklisted_tags.is_empty() {
+        blacklisted_tags = "
+            gore
+            scat
+            watersports
+            young -rating:s
+            loli
+            shota";
+    }
     open_db()?
         .execute(
-            "INSERT OR REPLACE INTO accounts (id, name, blacklisted_tags) VALUES (?1, ?2, ?4)",
+            "
+            INSERT INTO accounts (id, name, blacklisted_tags) 
+            VALUES (?1, ?2, ?4)
+            ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            blacklisted_tags = excluded.blacklisted_tags",
             params![account_id, name, blacklisted_tags],
         )
         .map_err(|e| format!("Failed to execute transaction: {e}"))?;
