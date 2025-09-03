@@ -50,6 +50,7 @@ pub struct Config {
     pub admin_user: String,
     pub admin_id: u32,
     pub admin_api: String,
+    pub tag_blacklist: Vec<String>,
 }
 
 static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
@@ -246,6 +247,7 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
 
 #[post("/process/<account_id>")]
 async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<String, String> {
+    let cfg = cfg();
     let account = db::get_account_by_id(account_id).map_err(|e| e.to_string())?;
     let user = api::get_account(&account).await;
     let favcount = match user {
@@ -271,12 +273,12 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
                     .artist
                     .iter()
                     .chain(p.tags.character.iter())
-                    .chain(p.tags.contributor.iter())
                     .chain(p.tags.copyright.iter())
                     .chain(p.tags.general.iter())
                     .chain(p.tags.lore.iter())
                     .chain(p.tags.meta.iter())
                     .chain(p.tags.species.iter())
+                    .filter(|t| !cfg.tag_blacklist.contains(t))
                     .map(|t| t.to_lowercase().trim().to_string())
             })
             .collect();
@@ -364,7 +366,6 @@ async fn get_recommendations(
         ("general", 1.0),
         ("meta", 0.4),
         ("lore", 0.6),
-        ("contributor", 0.8),
     ]);
     let priors = Priors {
         now: Utc::now(),
@@ -397,12 +398,6 @@ async fn get_recommendations(
                 .character
                 .into_iter()
                 .map(|t| (t, "character".into())),
-        );
-        post_tags.extend(
-            post.tags
-                .contributor
-                .into_iter()
-                .map(|t| (t, "contributor".into())),
         );
         post_tags.extend(
             post.tags

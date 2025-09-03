@@ -87,7 +87,7 @@ fn ensure_sqlite() -> Result<(), String> {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         group_type TEXT NOT NULL CHECK (group_type IN (
-            'artist','character','contributor','copyright',
+            'artist','character','copyright',
             'general','lore','meta','species'
         )),
         UNIQUE(name, group_type)
@@ -755,7 +755,6 @@ pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> R
             for (group, tags) in [
                 ("artist", &post.tags.artist),
                 ("character", &post.tags.character),
-                ("contributor", &post.tags.contributor),
                 ("copyright", &post.tags.copyright),
                 ("general", &post.tags.general),
                 ("lore", &post.tags.lore),
