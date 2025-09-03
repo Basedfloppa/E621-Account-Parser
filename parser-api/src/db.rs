@@ -88,7 +88,7 @@ fn ensure_sqlite() -> Result<(), String> {
         name TEXT NOT NULL,
         group_type TEXT NOT NULL CHECK (group_type IN (
             'artist','character','contributor','copyright',
-            'general','invalid','lore','meta','species'
+            'general','lore','meta','species'
         )),
         UNIQUE(name, group_type)
     ) STRICT;
@@ -758,7 +758,6 @@ pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> R
                 ("contributor", &post.tags.contributor),
                 ("copyright", &post.tags.copyright),
                 ("general", &post.tags.general),
-                ("invalid", &post.tags.invalid),
                 ("lore", &post.tags.lore),
                 ("meta", &post.tags.meta),
                 ("species", &post.tags.species),

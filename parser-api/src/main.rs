@@ -274,7 +274,6 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
                     .chain(p.tags.contributor.iter())
                     .chain(p.tags.copyright.iter())
                     .chain(p.tags.general.iter())
-                    .chain(p.tags.invalid.iter())
                     .chain(p.tags.lore.iter())
                     .chain(p.tags.meta.iter())
                     .chain(p.tags.species.iter())
@@ -364,7 +363,6 @@ async fn get_recommendations(
         ("species", 1.2),
         ("general", 1.0),
         ("meta", 0.4),
-        ("invalid", 0.2),
         ("lore", 0.6),
         ("contributor", 0.8),
     ]);
@@ -413,7 +411,6 @@ async fn get_recommendations(
                 .map(|t| (t, "copyright".into())),
         );
         post_tags.extend(post.tags.general.into_iter().map(|t| (t, "general".into())));
-        post_tags.extend(post.tags.invalid.into_iter().map(|t| (t, "invalid".into())));
         post_tags.extend(post.tags.lore.into_iter().map(|t| (t, "lore".into())));
         post_tags.extend(post.tags.meta.into_iter().map(|t| (t, "meta".into())));
         post_tags.extend(post.tags.species.into_iter().map(|t| (t, "species".into())));
