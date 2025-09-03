@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{HtmlInputElement, Node};
+use web_sys::HtmlInputElement;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use yew::prelude::*;
 

@@ -10,7 +10,6 @@ use crate::pages::UserInfo;
 pub fn account_creator() -> Html {
     let id = use_state(String::new);
     let name = use_state(String::new);
-    let api_key = use_state(String::new);
     let message = use_state(String::new);
     let error = use_state(|| false);
     let loading = use_state(|| false);
@@ -45,18 +44,9 @@ pub fn account_creator() -> Html {
         })
     };
 
-    let on_api_key_change = {
-        let api_key = api_key.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            api_key.set(input.value());
-        })
-    };
-
     let onsubmit = {
         let id = id.clone();
         let name = name.clone();
-        let api_key = api_key.clone();
         let message = message.clone();
         let error = error.clone();
         let loading = loading.clone();
@@ -67,7 +57,7 @@ pub fn account_creator() -> Html {
 
             let mut acocunt_copy = saved_accounts.clone().to_vec();
 
-            if id.is_empty() || name.is_empty() || api_key.is_empty() {
+            if id.is_empty() || name.is_empty() {
                 message.set("All fields are required".to_string());
                 error.set(true);
                 loading.set(false);
@@ -87,7 +77,6 @@ pub fn account_creator() -> Html {
             let account = UserInfo {
                 id: account_id,
                 name: name.to_string(),
-                api_key: api_key.to_string(),
             };
 
             let message = message.clone();
@@ -181,19 +170,6 @@ pub fn account_creator() -> Html {
                                         value={(*name).clone()}
                                         onchange={on_name_change}
                                         placeholder="Enter your username"
-                                        disabled={*loading}
-                                    />
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="api-key" class="form-label">{"API Key"}</label>
-                                    <input
-                                        type="password"
-                                        class="form-control"
-                                        id="api-key"
-                                        value={(*api_key).clone()}
-                                        onchange={on_api_key_change}
-                                        placeholder="Enter your API key"
                                         disabled={*loading}
                                     />
                                 </div>

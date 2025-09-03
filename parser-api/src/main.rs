@@ -7,7 +7,7 @@ use chrono::Utc;
 use log::info;
 use moka::sync::Cache;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use rocket::{State, serde::json::Json};
+use rocket::{State, futures::lock::Mutex, serde::json::Json};
 use rusqlite::Result;
 use serde::Deserialize;
 use std::{
@@ -47,8 +47,9 @@ const DEDUP_TTL_SECS: u64 = 60 * 30;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub db_url: String,
-    pub port: u16,
+    pub admin_user: String,
+    pub admin_id: u32,
+    pub admin_api: String,
 }
 
 static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
@@ -118,7 +119,7 @@ fn start_config_watcher(path: PathBuf) -> anyhow::Result<ConfigWatcher> {
                         thread::sleep(Duration::from_millis(120));
 
                         if let Ok(mtime) = file_mtime(&path) {
-                            if last_mtime.map_or(true, |old| old < mtime) {
+                            if last_mtime.is_none_or(|old| old < mtime) {
                                 match reload_from(&path) {
                                     Ok(_) => {
                                         last_mtime = Some(mtime);
@@ -133,7 +134,7 @@ fn start_config_watcher(path: PathBuf) -> anyhow::Result<ConfigWatcher> {
                     }
                 }
                 Ok(Err(e)) => eprintln!("[config] watch error: {e}"),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
@@ -346,12 +347,7 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
         UserApiResponse::FullUser(_) => "".to_string(),
     };
 
-    match set_account(
-        account.id,
-        &account.name,
-        &account.api_key,
-        &blacklisted_tags,
-    ) {
+    match set_account(account.id, &account.name, &blacklisted_tags) {
         Ok(_) => Ok(()),
         Err(e) => {
             let error_msg = format!("Failed to get account: {e}");
@@ -454,7 +450,7 @@ async fn get_recommendations(
 async fn rocket() -> _ {
     let path = default_path().unwrap();
     let _ = reload_from(&path);
-    let _watcher = start_config_watcher(path).unwrap();
+    let watcher = start_config_watcher(path).unwrap();
 
     let (tx, rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
@@ -467,6 +463,7 @@ async fn rocket() -> _ {
 
     rocket::build()
         .manage(AppState { tx })
+        .manage(Mutex::new(watcher))
         .mount(
             "/",
             routes![

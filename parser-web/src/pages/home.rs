@@ -14,7 +14,6 @@ pub struct TagCount {
 pub struct UserInfo {
     pub id: i64,
     pub name: String,
-    pub api_key: String,
 }
 
 #[function_component(HomePage)]

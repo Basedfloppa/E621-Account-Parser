@@ -43,7 +43,6 @@ pub fn saved_accounts_select(props: &SavedAccountsProps) -> Html {
                     found_user.set(Some(UserInfo {
                         id: account.id,
                         name: account.name.clone(),
-                        api_key: account.api_key.clone(),
                     }));
                     user_query.set(account.name.clone());
                 }

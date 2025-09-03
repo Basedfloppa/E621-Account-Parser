@@ -182,16 +182,11 @@ fn ensure_sqlite() -> Result<(), String> {
     Ok(())
 }
 
-pub fn set_account(
-    account_id: i32,
-    name: &str,
-    api_key: &str,
-    blacklisted_tags: &str,
-) -> Result<(), String> {
+pub fn set_account(account_id: i32, name: &str, blacklisted_tags: &str) -> Result<(), String> {
     open_db()?
         .execute(
-            "INSERT OR REPLACE INTO accounts (id, name, api_key, blacklisted_tags) VALUES (?1, ?2, ?3, ?4)",
-            params![account_id, name, api_key, blacklisted_tags],
+            "INSERT OR REPLACE INTO accounts (id, name, blacklisted_tags) VALUES (?1, ?2, ?4)",
+            params![account_id, name, blacklisted_tags],
         )
         .map_err(|e| format!("Failed to execute transaction: {e}"))?;
 
@@ -216,7 +211,6 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount, S
             Ok(TruncatedAccount {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                api_key: row.get(2)?,
                 blacklisted_tags: row.get(3)?,
             })
         })
@@ -249,7 +243,6 @@ pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount, String> 
             Ok(TruncatedAccount {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                api_key: row.get(2)?,
                 blacklisted_tags: row.get(3)?,
             })
         })

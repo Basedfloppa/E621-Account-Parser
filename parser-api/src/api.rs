@@ -6,6 +6,7 @@ use tokio::time::sleep;
 use urlencoding::encode;
 
 use crate::{
+    cfg,
     db::{record_alias_probe, record_implication_probe},
     models::{
         Post, PostsApiResponse, TagAlias, TagAliasesApiResponse, TagImplication,
@@ -210,10 +211,8 @@ pub async fn fetch_tag_implications_for(name: &str) -> Result<Vec<TagImplication
 }
 
 pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
-    info!(
-        "Fetching favorites: user_id={} user_name='{}' page={}",
-        account.id, account.name, page
-    );
+    info!("Fetching favorites: user_id={} page={}", account.id, page);
+    let cfg = cfg();
     let client = get_client();
     let url = build_url(
         "favorites.json",
@@ -227,7 +226,7 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
     let resp = send_with_retry(
         client
             .get(url)
-            .basic_auth(account.name.clone(), Some(account.api_key.clone())),
+            .basic_auth(cfg.admin_user.clone(), Some(cfg.admin_api.clone())),
     )
     .await
     .expect("favorites request failed");
@@ -246,13 +245,14 @@ pub async fn get_account(account: &TruncatedAccount) -> UserApiResponse {
         "Fetching account: id={} name='{}'",
         account.id, account.name
     );
+    let cfg = cfg();
     let client = get_client();
     let url = format!("{BASE_URL}users/{}.json", account.id);
     debug!("GET (auth) {url}");
     let resp = send_with_retry(
         client
             .get(url)
-            .basic_auth(account.name.clone(), Some(account.api_key.clone())),
+            .basic_auth(cfg.admin_user.clone(), Some(cfg.admin_api.clone())),
     )
     .await
     .expect("account request failed");
@@ -274,7 +274,7 @@ pub async fn get_posts(account: &TruncatedAccount, page: Option<i32>) -> Vec<Pos
         page.unwrap_or(0),
         blacklist.split_whitespace().count()
     );
-
+    let cfg = cfg();
     let client = get_client();
     let url = build_url(
         "posts.json",
@@ -288,7 +288,7 @@ pub async fn get_posts(account: &TruncatedAccount, page: Option<i32>) -> Vec<Pos
     let resp = send_with_retry(
         client
             .get(url)
-            .basic_auth(account.name.clone(), Some(account.api_key.clone())),
+            .basic_auth(cfg.admin_user.clone(), Some(cfg.admin_api.clone())),
     )
     .await
     .expect("posts request failed");
