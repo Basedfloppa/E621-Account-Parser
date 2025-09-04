@@ -1,4 +1,5 @@
 use serde::de::DeserializeOwned;
+use std::cell::Cell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
@@ -19,10 +20,27 @@ pub fn feed_page() -> Html {
     let posts = use_state(Vec::<(Post, f32)>::new);
     let page = use_state(|| 1usize);
     let is_loading = use_state(|| false);
+    let inflight = use_mut_ref(|| Cell::new(false));
     let error = use_state(|| Option::<String>::None);
     let has_more = use_state(|| true);
     let selected_user = use_state(|| Option::<UserInfo>::None);
-    let affinity_input: NodeRef = NodeRef::default();
+    let affinity = use_state(|| {
+        window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item("affinity_threshold").ok().flatten())
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.0)
+    });
+
+    {
+        let affinity = affinity.clone();
+        use_effect_with(*affinity, move |a: &f32| {
+            if let Some(store) = window().and_then(|w| w.local_storage().ok().flatten()) {
+                let _ = store.set_item("affinity_threshold", &a.to_string());
+            }
+            || ()
+        });
+    }
 
     let fetch_page = {
         let posts = posts.clone();
@@ -31,9 +49,13 @@ pub fn feed_page() -> Html {
         let error = error.clone();
         let has_more = has_more.clone();
         let selected_user = selected_user.clone();
-        let affinity_input = affinity_input.clone();
+        let affinity = affinity.clone();
+        let inflight = inflight.clone();
 
         Callback::from(move |_| {
+            if inflight.borrow().get() {
+                return;
+            }
             if *is_loading {
                 return;
             }
@@ -45,29 +67,28 @@ pub fn feed_page() -> Html {
 
             let mut url = format!("{API_BASE}/recommendations/{}?page={}", user.id, *page);
 
-            let affinity_value = affinity_input
-                .cast::<HtmlInputElement>()
-                .unwrap()
-                .value()
-                .parse::<f32>();
-
-            if affinity_value.is_ok() {
-                let value = affinity_value.unwrap();
-                if value > 0.0 {
-                    url.push_str(&format!("&affinity_threshold={}", &value));
-                }
+            let value = *affinity;
+            if value > 0.0 {
+                url.push_str(&format!("&affinity_threshold={value}"));
             }
 
+            inflight.borrow().set(true);
             is_loading.set(true);
             error.set(None);
 
             let posts = posts.clone();
             let page = page.clone();
             let is_loading = is_loading.clone();
+            let inflight_done = inflight.clone();
             let error = error.clone();
             let has_more = has_more.clone();
 
             spawn_local(async move {
+                let done = || {
+                    is_loading.set(false);
+                    inflight_done.borrow().set(false);
+                };
+
                 match fetch_json::<Vec<(Post, f32)>>(&url).await {
                     Ok(mut new_items) => {
                         let incoming = new_items.len();
@@ -90,12 +111,14 @@ pub fn feed_page() -> Html {
                         if incoming < crate::models::API_PAGE_SIZE || added == 0 {
                             has_more.set(false);
                         }
+
+                        done();
                     }
                     Err(e) => {
                         error.set(Some(e));
+                        done();
                     }
                 }
-                is_loading.set(false);
             });
         })
     };
@@ -141,7 +164,7 @@ pub fn feed_page() -> Html {
 
                 let win_for_cb = win.clone();
                 let on_scroll = Closure::<dyn FnMut(Event)>::wrap(Box::new(move |_e: Event| {
-                    if selected_user_cb.is_some() && !*is_loading_cb && *has_more_cb {
+                    if (*selected_user_cb).is_some() && !*is_loading_cb && *has_more_cb {
                         let scroll_y = win_for_cb.scroll_y().unwrap_or(0.0);
                         let inner_h = win_for_cb
                             .inner_height()
@@ -177,7 +200,6 @@ pub fn feed_page() -> Html {
                     .ok()
                     .and_then(|h| h.as_f64())
                     .unwrap_or(0.0);
-
                 let doc = win.document();
                 let scroll_h = doc
                     .as_ref()
@@ -190,7 +212,7 @@ pub fn feed_page() -> Html {
                     })
                     .unwrap_or(0.0);
 
-                if selected_user.is_some()
+                if (*selected_user).is_some()
                     && !*is_loading
                     && *has_more
                     && (scroll_y + inner_h + PIXELS_BEFORE_REFETCH >= scroll_h)
@@ -220,7 +242,24 @@ pub fn feed_page() -> Html {
             />
 
             <label>{"Minimal affinity"}
-            <input type="number" class="form-control" ref={affinity_input} value="0.0" />
+                <input
+                    type="number"
+                    class="form-control"
+                    value={affinity.to_string()}
+                    step="0.01"
+                    oninput={{
+                        let affinity = affinity.clone();
+                        Callback::from(move |e: InputEvent| {
+                            if let Some(target) = e.target() {
+                                if let Ok(input) = target.dyn_into::<HtmlInputElement>() {
+                                    if let Ok(v) = input.value().parse::<f32>() {
+                                        affinity.set(v);
+                                    }
+                                }
+                            }
+                        })
+                    }}
+                />
             </label>
 
             <div class="d-flex align-items-center justify-content-between mb-3">
