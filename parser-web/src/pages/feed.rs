@@ -1,9 +1,10 @@
 use serde::de::DeserializeOwned;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
-use web_sys::{Request, RequestInit, RequestMode, Response};
+use web_sys::{Request, RequestInit, RequestMode, Response, window};
 use yew::prelude::*;
 
 use crate::components::*;
@@ -11,6 +12,7 @@ use crate::models::*;
 use crate::pages::UserInfo;
 
 const API_BASE: &str = "http://localhost:8080";
+const PIXELS_BEFORE_REFETCH: f64 = 1000.0;
 
 #[function_component(FeedPage)]
 pub fn feed_page() -> Html {
@@ -77,12 +79,10 @@ pub fn feed_page() -> Html {
 
                         let added = new_items.len();
                         if added > 0 {
-                            merged.extend(new_items);
-
-                            merged.sort_by(|a, b| {
+                            new_items.sort_by(|a, b| {
                                 b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
                             });
-
+                            merged.extend(new_items);
                             posts.set(merged);
                             page.set(*page + 1);
                         }
@@ -122,6 +122,92 @@ pub fn feed_page() -> Html {
                 || ()
             },
         );
+    }
+
+    {
+        let is_loading = is_loading.clone();
+        let has_more = has_more.clone();
+        let selected_user = selected_user.clone();
+        let fetch_page = fetch_page.clone();
+
+        use_effect(move || {
+            let mut listener: Option<(web_sys::Window, Closure<dyn FnMut(Event)>)> = None;
+
+            if let Some(win) = window() {
+                let is_loading_cb = is_loading.clone();
+                let has_more_cb = has_more.clone();
+                let selected_user_cb = selected_user.clone();
+                let fetch_page_cb = fetch_page.clone();
+
+                let win_for_cb = win.clone();
+                let on_scroll = Closure::<dyn FnMut(Event)>::wrap(Box::new(move |_e: Event| {
+                    if selected_user_cb.is_some() && !*is_loading_cb && *has_more_cb {
+                        let scroll_y = win_for_cb.scroll_y().unwrap_or(0.0);
+                        let inner_h = win_for_cb
+                            .inner_height()
+                            .ok()
+                            .and_then(|h| h.as_f64())
+                            .unwrap_or(0.0);
+
+                        let doc = match win_for_cb.document() {
+                            Some(d) => d,
+                            None => return,
+                        };
+                        let scroll_h = if let Some(el) = doc.document_element() {
+                            el.scroll_height() as f64
+                        } else if let Some(body) = doc.body() {
+                            body.scroll_height() as f64
+                        } else {
+                            0.0
+                        };
+
+                        if scroll_y + inner_h + PIXELS_BEFORE_REFETCH >= scroll_h {
+                            fetch_page_cb.emit(());
+                        }
+                    }
+                }));
+
+                let _ = win
+                    .add_event_listener_with_callback("scroll", on_scroll.as_ref().unchecked_ref());
+                listener = Some((win.clone(), on_scroll));
+
+                let scroll_y = win.scroll_y().unwrap_or(0.0);
+                let inner_h = win
+                    .inner_height()
+                    .ok()
+                    .and_then(|h| h.as_f64())
+                    .unwrap_or(0.0);
+
+                let doc = win.document();
+                let scroll_h = doc
+                    .as_ref()
+                    .and_then(|d| d.document_element())
+                    .map(|el| el.scroll_height() as f64)
+                    .or_else(|| {
+                        doc.as_ref()
+                            .and_then(|d| d.body())
+                            .map(|b| b.scroll_height() as f64)
+                    })
+                    .unwrap_or(0.0);
+
+                if selected_user.is_some()
+                    && !*is_loading
+                    && *has_more
+                    && (scroll_y + inner_h + PIXELS_BEFORE_REFETCH >= scroll_h)
+                {
+                    fetch_page.emit(());
+                }
+            }
+
+            move || {
+                if let Some((win, on_scroll)) = listener {
+                    let _ = win.remove_event_listener_with_callback(
+                        "scroll",
+                        on_scroll.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+        });
     }
 
     html! {
@@ -206,39 +292,6 @@ pub fn feed_page() -> Html {
                     }
                 } else { html!{} }
             }
-
-            <div class="d-flex justify-content-center my-4">
-                {
-                    if *has_more {
-                        html! {
-                            <button
-                                class="btn btn-primary position-fixed bottom-0 start-50 translate-middle-x mb-4 p-2 z-3"
-                                type="button"
-                                onclick={{
-                                    let fetch_page = fetch_page.clone();
-                                    Callback::from(move |_| fetch_page.emit(()))
-                                }}
-                                disabled={*is_loading || selected_user.is_none()}
-                                aria-busy={(*is_loading).to_string()}
-                            >
-                                {
-                                    if selected_user.is_none() {
-                                        html!{ "Select an account" }
-                                    } else if *is_loading {
-                                        html!{ "Loading..." }
-                                    } else {
-                                        html!{ "Load more" }
-                                    }
-                                }
-                            </button>
-                        }
-                    } else if !posts.is_empty() {
-                        html! { <span class="text-muted">{ "You’re all caught up." }</span> }
-                    } else {
-                        html!{}
-                    }
-                }
-            </div>
         </div>
     }
 }
