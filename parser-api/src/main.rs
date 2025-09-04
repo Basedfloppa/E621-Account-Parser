@@ -247,7 +247,11 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
 
 #[post("/process/<account_id>")]
 async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<String, String> {
-    let cfg = cfg();
+    let blacklist: HashSet<String> = cfg()
+        .tag_blacklist
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect();
     let account = db::get_account_by_id(account_id).map_err(|e| e.to_string())?;
     let user = api::get_account(&account).await;
     let favcount = match user {
@@ -261,7 +265,11 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
     let mut seen_tags: HashSet<String> = HashSet::new();
 
     for i in 1..=pages {
-        let posts = api::get_favorites(&account, i).await;
+        let raw_posts = api::get_favorites(&account, i).await;
+        let posts: Vec<Post> = raw_posts
+            .into_iter()
+            .map(|p| strip_blacklisted(p, &blacklist))
+            .collect();
         info!("{} post(s) found on page {}", posts.len(), i);
 
         db::save_posts(&posts, account.id).map_err(|e| format!("Failed to save posts: {e}"))?;
@@ -278,7 +286,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
                     .chain(p.tags.lore.iter())
                     .chain(p.tags.meta.iter())
                     .chain(p.tags.species.iter())
-                    .filter(|t| !cfg.tag_blacklist.contains(t))
+                    .filter(|t| !blacklist.contains(t.to_lowercase().trim()))
                     .map(|t| t.to_lowercase().trim().to_string())
             })
             .collect();
@@ -296,12 +304,26 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
         }
 
         let maps = db::load_relation_maps_for(&seen_tags).map_err(|e| format!("load maps: {e}"))?;
-        db::save_posts_tags_batch_with_maps(&posts, &maps)
+        db::save_posts_tags_batch_with_maps(&posts, &maps, &blacklist)
             .map_err(|e| format!("Failed to save tags for page {i}: {e}"))?;
     }
 
     set_tag_counts(account_id).map_err(|e| format!("Failed to set account tag counts: {e}"))?;
     Ok(json::to_string(&"okay :3").unwrap())
+}
+
+fn strip_blacklisted(mut p: Post, blacklist: &HashSet<String>) -> Post {
+    let mut norm = |v: &mut Vec<String>| {
+        v.retain(|t| !blacklist.contains(&t.to_lowercase().trim().to_string()));
+    };
+    norm(&mut p.tags.artist);
+    norm(&mut p.tags.character);
+    norm(&mut p.tags.copyright);
+    norm(&mut p.tags.general);
+    norm(&mut p.tags.lore);
+    norm(&mut p.tags.meta);
+    norm(&mut p.tags.species);
+    p
 }
 
 #[get("/account/<account_id>/tag_counts")]

@@ -719,8 +719,11 @@ pub fn load_relation_maps_for(tags: &HashSet<String>) -> Result<RelationMaps, St
 
     Ok(RelationMaps { alias, implied })
 }
-
-pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> Result<(), String> {
+pub fn save_posts_tags_batch_with_maps(
+    posts: &[Post],
+    maps: &RelationMaps,
+    blacklist: &HashSet<String>,
+) -> Result<(), String> {
     if posts.is_empty() {
         return Ok(());
     }
@@ -740,18 +743,23 @@ pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> R
             .map_err(|e| format!("prep link: {e}"))?;
 
         let mut touch = |name: &str, group: &str, post_id: i64| -> Result<(), String> {
+            if blacklist.contains(&name.to_lowercase().trim().to_string()) {
+                return Ok(());
+            }
             insert_tag
-                .execute(params![name, group])
+                .execute(rusqlite::params![name, group])
                 .map_err(|e| format!("ins tag: {e}"))?;
             let id: i64 = select_id
-                .query_row(params![name, group], |r| r.get(0))
+                .query_row(rusqlite::params![name, group], |r| r.get(0))
                 .map_err(|e| format!("get id {name}:{group}: {e}"))?;
-            link.execute(params![id, post_id])
+            link.execute(rusqlite::params![id, post_id])
                 .map_err(|e| format!("link: {e}"))?;
             Ok(())
         };
 
         for post in posts {
+            let mut seen: HashSet<(String, &'static str)> = HashSet::new();
+
             for (group, tags) in [
                 ("artist", &post.tags.artist),
                 ("character", &post.tags.character),
@@ -764,14 +772,32 @@ pub fn save_posts_tags_batch_with_maps(posts: &[Post], maps: &RelationMaps) -> R
                 for raw in tags {
                     let mut canonical = raw.to_lowercase().trim().to_string();
                     if let Some(c) = maps.alias.get(&canonical) {
-                        canonical = c.clone();
+                        canonical = c.to_lowercase().trim().to_string();
                     }
-                    touch(&canonical, group, post.id)?;
+
+                    if blacklist.contains(&canonical) {
+                        continue;
+                    }
+
+                    if seen.insert((canonical.clone(), group)) {
+                        touch(&canonical, group, post.id)?;
+                    }
+
                     if let Some(list) = maps.implied.get(&canonical) {
                         for imp in list {
-                            let imp_canonical =
-                                maps.alias.get(imp).cloned().unwrap_or_else(|| imp.clone());
-                            touch(&imp_canonical, group, post.id)?;
+                            let imp0 = imp.to_lowercase().trim().to_string();
+                            let imp_canonical = maps
+                                .alias
+                                .get(&imp0)
+                                .map(|s| s.to_lowercase().trim().to_string())
+                                .unwrap_or(imp0);
+
+                            if blacklist.contains(&imp_canonical) {
+                                continue;
+                            }
+                            if seen.insert((imp_canonical.clone(), group)) {
+                                touch(&imp_canonical, group, post.id)?;
+                            }
                         }
                     }
                 }
