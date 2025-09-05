@@ -22,7 +22,6 @@ pub fn feed_page() -> Html {
     let is_loading = use_state(|| false);
     let inflight = use_mut_ref(|| Cell::new(false));
     let error = use_state(|| Option::<String>::None);
-    let has_more = use_state(|| true);
     let selected_user = use_state(|| Option::<UserInfo>::None);
     let affinity = use_state(|| {
         window()
@@ -47,7 +46,6 @@ pub fn feed_page() -> Html {
         let page = page.clone();
         let is_loading = is_loading.clone();
         let error = error.clone();
-        let has_more = has_more.clone();
         let selected_user = selected_user.clone();
         let affinity = affinity.clone();
         let inflight = inflight.clone();
@@ -81,7 +79,6 @@ pub fn feed_page() -> Html {
             let is_loading = is_loading.clone();
             let inflight_done = inflight.clone();
             let error = error.clone();
-            let has_more = has_more.clone();
 
             spawn_local(async move {
                 let done = || {
@@ -91,8 +88,6 @@ pub fn feed_page() -> Html {
 
                 match fetch_json::<Vec<(Post, f32)>>(&url).await {
                     Ok(mut new_items) => {
-                        let incoming = new_items.len();
-
                         use std::collections::HashSet;
                         let mut merged = (*posts).clone();
                         let mut seen: HashSet<i64> = merged.iter().map(|p| p.0.id).collect();
@@ -106,10 +101,6 @@ pub fn feed_page() -> Html {
                             merged.extend(new_items);
                             posts.set(merged);
                             page.set(*page + 1);
-                        }
-
-                        if incoming < crate::models::API_PAGE_SIZE || added == 0 {
-                            has_more.set(false);
                         }
 
                         done();
@@ -126,7 +117,6 @@ pub fn feed_page() -> Html {
     {
         let posts = posts.clone();
         let page = page.clone();
-        let has_more = has_more.clone();
         let error = error.clone();
         let is_loading = is_loading.clone();
         let fetch_page = fetch_page.clone();
@@ -137,7 +127,6 @@ pub fn feed_page() -> Html {
                 if selected.is_some() {
                     posts.set(Vec::new());
                     page.set(1);
-                    has_more.set(true);
                     error.set(None);
                     is_loading.set(false);
                     fetch_page.emit(());
@@ -149,7 +138,6 @@ pub fn feed_page() -> Html {
 
     {
         let is_loading = is_loading.clone();
-        let has_more = has_more.clone();
         let selected_user = selected_user.clone();
         let fetch_page = fetch_page.clone();
 
@@ -158,13 +146,12 @@ pub fn feed_page() -> Html {
 
             if let Some(win) = window() {
                 let is_loading_cb = is_loading.clone();
-                let has_more_cb = has_more.clone();
                 let selected_user_cb = selected_user.clone();
                 let fetch_page_cb = fetch_page.clone();
 
                 let win_for_cb = win.clone();
                 let on_scroll = Closure::<dyn FnMut(Event)>::wrap(Box::new(move |_e: Event| {
-                    if (*selected_user_cb).is_some() && !*is_loading_cb && *has_more_cb {
+                    if (*selected_user_cb).is_some() && !*is_loading_cb {
                         let scroll_y = win_for_cb.scroll_y().unwrap_or(0.0);
                         let inner_h = win_for_cb
                             .inner_height()
@@ -214,7 +201,6 @@ pub fn feed_page() -> Html {
 
                 if (*selected_user).is_some()
                     && !*is_loading
-                    && *has_more
                     && (scroll_y + inner_h + PIXELS_BEFORE_REFETCH >= scroll_h)
                 {
                     fetch_page.emit(());
