@@ -6,6 +6,7 @@ use rocket::{
 use rusqlite::{Connection, Result, params};
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     str::FromStr,
 };
 
@@ -60,6 +61,12 @@ fn parse_rfc3339_opt(s: Option<String>) -> Option<DateTime<Utc>> {
 }
 
 fn open_db() -> Result<Connection, String> {
+    if fs::exists("database.db").is_err() {
+        if let Err(e) = (fs::File::create("database.db")) {
+            eprintln!("{e}")
+        }
+    }
+
     let connection =
         Connection::open("database.db").map_err(|e| format!("Failed to get connection: {e}"))?;
 
