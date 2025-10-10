@@ -12,7 +12,7 @@ use crate::components::*;
 use crate::models::*;
 use crate::pages::UserInfo;
 
-const API_BASE: &str = "http://localhost:8080";
+const API_BASE: &str = "https://e621scraperbackend.duckdns.org";
 const PIXELS_BEFORE_REFETCH: f64 = 1000.0;
 
 #[function_component(FeedPage)]
