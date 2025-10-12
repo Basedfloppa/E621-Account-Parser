@@ -191,12 +191,12 @@ fn ensure_sqlite() -> Result<(), String> {
 pub fn set_account(account_id: i32, name: &str, mut blacklisted_tags: &str) -> Result<(), String> {
     if blacklisted_tags.is_empty() {
         blacklisted_tags = "
-            gore
-            scat
-            watersports
-            young -rating:s
-            loli
-            shota";
+gore
+scat
+watersports
+young -rating:s
+loli
+shota";
     }
 
     eprint!("{blacklisted_tags:?}");
