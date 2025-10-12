@@ -157,7 +157,9 @@ pub fn cfg() -> Arc<Config> {
 
 pub fn reload_from(p: &Path) -> anyhow::Result<()> {
     let new = load_config(p)?;
-    CONFIG.store(Arc::new(new));
+    let arc = Arc::new(new);
+    CONFIG.store(arc.clone());
+    eprintln!("[config] current value:\n{arc:#?}");
     Ok(())
 }
 
@@ -313,7 +315,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
 }
 
 fn strip_blacklisted(mut p: Post, blacklist: &HashSet<String>) -> Post {
-    let mut norm = |v: &mut Vec<String>| {
+    let norm = |v: &mut Vec<String>| {
         v.retain(|t| !blacklist.contains(&t.to_lowercase().trim().to_string()));
     };
     norm(&mut p.tags.artist);
