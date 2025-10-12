@@ -222,7 +222,9 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
             ("page", page.to_string()),
         ],
     );
-    debug!("GET (auth) {url}");
+
+    debug!("GET (auth) /favorites.json?user_id=…&limit=…&page={page}");
+
     let resp = send_with_retry(
         client
             .get(url)
@@ -231,7 +233,10 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
     .await
     .expect("favorites request failed");
 
-    let body = resp.text().await.expect("favorites body read failed");
+    let body = resp
+        .text()
+        .await
+        .unwrap_or("favorites body read failed".to_string());
     let posts = json::from_str::<PostsApiResponse>(&body)
         .expect("favorites parse failed")
         .posts;
