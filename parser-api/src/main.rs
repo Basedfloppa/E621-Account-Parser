@@ -8,6 +8,8 @@ use log::info;
 use moka::sync::Cache;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use rocket::{State, futures::lock::Mutex, serde::json::Json};
+use rocket::{get, http::Method, routes};
+use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use rusqlite::Result;
 use serde::Deserialize;
 use std::{
@@ -25,7 +27,6 @@ use tokio::{
 };
 
 use crate::{
-    cors::Cors,
     db::{
         DbInit, find_missing_relations, get_account_by_id, get_account_by_name, get_tag_counts,
         set_account, set_tag_aliases, set_tag_counts, set_tag_implications,
@@ -36,7 +37,6 @@ use crate::{
 };
 
 mod api;
-mod cors;
 mod db;
 mod models;
 mod utils;
@@ -376,11 +376,6 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     }
 }
 
-#[options("/account", data = "<account>")]
-async fn options_account(account: Json<TruncatedAccount>) -> Result<(), String> {
-    create_account(account).await
-}
-
 #[get("/recommendations/<account_id>?<page>&<affinity_threshold>")]
 async fn get_recommendations(
     account_id: i32,
@@ -474,6 +469,28 @@ async fn rocket() -> _ {
         .max_capacity(500_000)
         .build();
 
+    let cors = CorsOptions {
+        allowed_origins: AllowedOrigins::all(),
+        allowed_methods: [
+            Method::Get,
+            Method::Post,
+            Method::Put,
+            Method::Patch,
+            Method::Delete,
+            Method::Options,
+            Method::Head,
+        ]
+        .into_iter()
+        .map(From::from)
+        .collect(),
+        allowed_headers: AllowedHeaders::all(),
+        allow_credentials: true,
+        max_age: Some(86400),
+        ..Default::default()
+    }
+    .to_cors()
+    .expect("CORS configuration");
+
     tokio::spawn(relations_worker(rx, dedup));
 
     rocket::build()
@@ -487,10 +504,9 @@ async fn rocket() -> _ {
                 get_account_id,
                 get_account_name,
                 create_account,
-                options_account,
                 get_recommendations,
             ],
         )
-        .attach(Cors)
+        .attach(cors)
         .attach(DbInit)
 }
