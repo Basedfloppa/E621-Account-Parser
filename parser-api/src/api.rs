@@ -118,7 +118,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
             Err(e) => {
                 if attempt < MAX_RETRIES {
                     warn!(
-                        "Request error on attempt {}/{}: {}. Retrying in {:?}",
+                        "Request error on attempt {}/{}: {:?}. Retrying in {:?}",
                         attempt + 1,
                         MAX_RETRIES + 1,
                         e,
