@@ -212,6 +212,7 @@ pub async fn fetch_tag_implications_for(name: &str) -> Result<Vec<TagImplication
 
 pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
     info!("Fetching favorites: user_id={} page={}", account.id, page);
+
     let cfg = cfg();
     let client = get_client();
     let url = build_url(
@@ -222,24 +223,53 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
             ("page", page.to_string()),
         ],
     );
-
     debug!("GET (auth) /favorites.json?user_id=…&limit=…&page={page}");
 
-    let resp = send_with_retry(
+    let resp = match send_with_retry(
         client
             .get(url)
             .basic_auth(cfg.admin_user.clone(), Some(cfg.admin_api.clone())),
     )
     .await
-    .expect("favorites request failed");
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("favorites request failed: {e}");
+            return Vec::new();
+        }
+    };
 
-    let body = resp
-        .text()
-        .await
-        .unwrap_or("favorites body read failed".to_string());
-    let posts = json::from_str::<PostsApiResponse>(&body)
-        .expect("favorites parse failed")
-        .posts;
+    let status = resp.status();
+    let body = match resp.text().await {
+        Ok(b) => b,
+        Err(e) => {
+            warn!("reading favorites body failed: {e}");
+            return Vec::new();
+        }
+    };
+
+    if !status.is_success() {
+        let preview = body.chars().take(200).collect::<String>();
+        match status {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                warn!("favorites auth failed ({status}). Body: {preview}");
+            }
+            StatusCode::TOO_MANY_REQUESTS => {
+                warn!("favorites rate limited (429). Body: {preview}");
+            }
+            _ => warn!("favorites non-success {status}. Body: {preview}"),
+        }
+        return Vec::new();
+    }
+
+    let posts = match rocket::serde::json::from_str::<PostsApiResponse>(&body) {
+        Ok(r) => r.posts,
+        Err(e) => {
+            let preview = body.chars().take(200).collect::<String>();
+            warn!("favorites parse failed: {e}; first bytes: {preview}");
+            return Vec::new();
+        }
+    };
 
     info!("Fetched {} favorite posts", posts.len());
     posts
