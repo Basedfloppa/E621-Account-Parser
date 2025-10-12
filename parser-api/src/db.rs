@@ -198,6 +198,9 @@ pub fn set_account(account_id: i32, name: &str, mut blacklisted_tags: &str) -> R
             loli
             shota";
     }
+
+    eprint!("{blacklisted_tags:?}");
+
     open_db()?
         .execute(
             "
