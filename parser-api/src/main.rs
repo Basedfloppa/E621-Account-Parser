@@ -487,6 +487,7 @@ async fn rocket() -> _ {
                 get_account_id,
                 get_account_name,
                 create_account,
+                options_account,
                 get_recommendations,
             ],
         )
