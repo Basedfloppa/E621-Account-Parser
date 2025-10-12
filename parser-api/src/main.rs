@@ -376,6 +376,11 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     }
 }
 
+#[options("/account", data = "<account>")]
+async fn options_account(account: Json<TruncatedAccount>) -> Result<(), String> {
+    create_account(account).await
+}
+
 #[get("/recommendations/<account_id>?<page>&<affinity_threshold>")]
 async fn get_recommendations(
     account_id: i32,
