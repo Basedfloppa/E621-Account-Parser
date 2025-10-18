@@ -1,5 +1,3 @@
-<div align="center">
-
 # E621 Account Parser
 
 A tiny web app for storing personal favorites and generating a personalized post feed.
@@ -17,8 +15,6 @@ A tiny web app for storing personal favorites and generating a personalized post
 [![Code Size](https://img.shields.io/github/languages/code-size/Basedfloppa/e621-Account-Parser?style=flat-square)](https://github.com/Basedfloppa/e621-Account-Parser)
 [![Repo Size](https://img.shields.io/github/repo-size/Basedfloppa/e621-Account-Parser?style=flat-square)](https://github.com/Basedfloppa/e621-Account-Parser)
 [![Latest Release](https://img.shields.io/github/v/release/Basedfloppa/e621-Account-Parser?display_name=tag&sort=semver&style=flat-square)](https://github.com/Basedfloppa/e621-Account-Parser/releases)
-
-</div>
 
 ## ✨ Features
 - Save and manage personal favorites

@@ -2,7 +2,7 @@ use std::rc::Rc;
 use web_sys::window;
 use yew::prelude::*;
 
-use crate::models::{self, *};
+use crate::models::*;
 
 #[derive(Properties, PartialEq)]
 pub struct PostCardProps {
