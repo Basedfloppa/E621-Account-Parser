@@ -15,6 +15,7 @@ pub struct Config {
     pub admin_api: String,
     pub tag_blacklist: Vec<String>,
     pub frontend_domains: Vec<String>,
+    pub posts_domain: String,
 }
 
 pub struct ConfigWatcher {

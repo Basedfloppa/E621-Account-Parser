@@ -1,78 +1,8 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct TagAlias {
-    pub id: i64,
-    pub antecedent_name: String,
-    pub consequent_name: String,
-    pub status: String,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum TagAliasesApiResponse {
-    Wrapped { tag_aliases: Vec<TagAlias> },
-    Direct(Vec<TagAlias>),
-}
-
-impl TagAliasesApiResponse {
-    pub fn into_vec(self) -> Vec<TagAlias> {
-        match self {
-            TagAliasesApiResponse::Wrapped { tag_aliases } => tag_aliases,
-            TagAliasesApiResponse::Direct(v) => v,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct TagImplication {
-    pub id: i64,
-    pub antecedent_name: String,
-    pub consequent_name: String,
-    pub status: String,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum TagImplicationsApiResponse {
-    Wrapped {
-        tag_implications: Vec<TagImplication>,
-    },
-    Direct(Vec<TagImplication>),
-}
-
-impl TagImplicationsApiResponse {
-    pub fn into_vec(self) -> Vec<TagImplication> {
-        match self {
-            TagImplicationsApiResponse::Wrapped { tag_implications } => tag_implications,
-            TagImplicationsApiResponse::Direct(v) => v,
-        }
-    }
-}
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct TagCount {
     pub name: String,
     pub group_type: String,
     pub count: i64,
-}
-
-pub struct RelationMaps {
-    pub alias: HashMap<String, String>,
-    pub implied: HashMap<String, Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TagRelationProbe {
-    pub tag: String,
-    pub aliases_last_checked: Option<DateTime<Utc>>,
-    pub aliases_count: i64,
-    pub implications_last_checked: Option<DateTime<Utc>>,
-    pub implications_count: i64,
 }

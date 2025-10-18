@@ -2,26 +2,17 @@
 extern crate rocket;
 
 use chrono::Utc;
-use moka::sync::Cache;
 use rocket::{State, futures::lock::Mutex, serde::json::Json};
 use rocket::{get, http::Method, routes};
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use rusqlite::Result;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    sync::{Semaphore, mpsc},
-    task::JoinSet,
-};
+use std::collections::{HashMap, HashSet};
+use tokio::sync::mpsc;
 
 use crate::models::{cfg, default_path, reload_from, start_config_watcher};
 use crate::{
     db::{
-        DbInit, find_missing_relations, get_account_by_id, get_account_by_name, get_tag_counts,
-        set_account, set_tag_aliases, set_tag_counts, set_tag_implications,
+        DbInit, get_account_by_id, get_account_by_name, get_tag_counts, set_account, set_tag_counts,
     },
     models::{Post, TagCount, TruncatedAccount, UserApiResponse},
     rocket::serde::json,
@@ -34,96 +25,10 @@ mod models;
 mod utils;
 
 const QUEUE_CAP: usize = 10_000;
-const BATCH_SIZE: usize = 500;
-const DEDUP_TTL_SECS: u64 = 60 * 30;
 
 #[derive(Clone)]
 struct AppState {
     tx: mpsc::Sender<Vec<String>>,
-}
-
-async fn relations_worker(mut rx: mpsc::Receiver<Vec<String>>, dedup: Cache<String, ()>) {
-    while let Some(batch) = rx.recv().await {
-        let unique: Vec<String> = batch
-            .into_iter()
-            .filter(|t| {
-                if dedup.contains_key(t) {
-                    false
-                } else {
-                    dedup.insert(t.clone(), ());
-                    true
-                }
-            })
-            .collect();
-
-        if unique.is_empty() {
-            continue;
-        }
-
-        for chunk in unique.chunks(BATCH_SIZE) {
-            if let Err(e) = refresh_relations_chunk(chunk).await {
-                eprintln!("warn: background refresh chunk failed: {e}");
-            }
-        }
-    }
-}
-
-async fn refresh_relations_chunk(tags: &[String]) -> Result<(), String> {
-    use std::collections::HashSet;
-    let set: HashSet<String> = tags.iter().cloned().collect();
-    refresh_relations_for_tags(&set).await
-}
-
-async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String> {
-    let (miss_alias, miss_imp) = find_missing_relations(tags)?;
-
-    let con_limit = 10usize;
-
-    {
-        let sem = Arc::new(Semaphore::new(con_limit));
-        let mut jobs = JoinSet::new();
-
-        for t in miss_alias {
-            let sem = Arc::clone(&sem);
-            jobs.spawn(async move {
-                let _permit = sem.acquire_owned().await.expect("semaphore");
-                let res = api::fetch_tag_aliases_for(&t).await;
-                (t, res)
-            });
-        }
-
-        while let Some(res) = jobs.join_next().await {
-            let (tag, result) = res.map_err(|e| format!("alias task join: {e}"))?;
-            match result {
-                Ok(list) => set_tag_aliases(&list)?,
-                Err(err) => eprintln!("warn: alias fetch failed for {tag}: {err}"),
-            }
-        }
-    }
-
-    {
-        let sem = Arc::new(Semaphore::new(con_limit));
-        let mut jobs = JoinSet::new();
-
-        for t in miss_imp {
-            let sem = Arc::clone(&sem);
-            jobs.spawn(async move {
-                let _permit = sem.acquire_owned().await.expect("semaphore");
-                let res = api::fetch_tag_implications_for(&t).await;
-                (t, res)
-            });
-        }
-
-        while let Some(res) = jobs.join_next().await {
-            let (tag, result) = res.map_err(|e| format!("imp task join: {e}"))?;
-            match result {
-                Ok(list) => set_tag_implications(&list)?,
-                Err(err) => eprintln!("warn: implication fetch failed for {tag}: {err}"),
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[post("/process/<account_id>")]
@@ -184,8 +89,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
             seen_tags.extend(page_tagset.into_iter());
         }
 
-        let maps = db::load_relation_maps_for(&seen_tags).map_err(|e| format!("load maps: {e}"))?;
-        db::save_posts_tags_batch_with_maps(&posts, &maps, &blacklist)
+        db::save_posts_tags_batch_with_maps(&posts, &blacklist)
             .map_err(|e| format!("Failed to save tags for page {i}: {e}"))?;
     }
 
@@ -341,12 +245,7 @@ async fn rocket() -> _ {
     let _ = reload_from(&path);
     let watcher = start_config_watcher(path).unwrap();
 
-    let (tx, rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
-
-    let dedup = Cache::builder()
-        .time_to_live(Duration::from_secs(DEDUP_TTL_SECS))
-        .max_capacity(500_000)
-        .build();
+    let (tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
     let cors = CorsOptions {
         allowed_origins: AllowedOrigins::some_exact(&cfg().frontend_domains),
@@ -361,8 +260,6 @@ async fn rocket() -> _ {
     }
     .to_cors()
     .expect("CORS configuration");
-
-    tokio::spawn(relations_worker(rx, dedup));
 
     rocket::build()
         .manage(AppState { tx })

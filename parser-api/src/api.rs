@@ -6,28 +6,24 @@ use urlencoding::encode;
 
 use crate::{
     cfg,
-    db::{record_alias_probe, record_implication_probe},
-    models::{
-        Post, PostsApiResponse, TagAlias, TagAliasesApiResponse, TagImplication,
-        TagImplicationsApiResponse, TruncatedAccount, UserApiResponse,
-    },
+    models::{Post, PostsApiResponse, TruncatedAccount, UserApiResponse},
 };
 
 pub const LIMIT: i32 = 320;
-const BASE_URL: &str = "https://e621.net/";
 const RPS_DELAY_MS: u64 = 250;
 const MAX_RETRIES: usize = 3;
 
 fn build_url(path: &str, params: &[(&str, String)]) -> String {
+    let cfg = cfg();
     let url = if params.is_empty() {
-        format!("{BASE_URL}{path}")
+        format!("{}{path}", cfg.posts_domain)
     } else {
         let qs = params
             .iter()
             .map(|(k, v)| format!("{k}={}", encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        format!("{BASE_URL}{path}?{qs}")
+        format!("{}{path}?{qs}", cfg.posts_domain)
     };
     trace!("build_url: path={path} -> {url}");
     url
@@ -130,83 +126,11 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                 error!("Request failed after {} attempts: {}", MAX_RETRIES + 1, e);
                 Err(format!("request failed after retries: {e}"))
             }
-        }
+        };
     }
 
     error!("send_with_retry exhausted attempts but reached unreachable branch");
     Err("unreachable".into())
-}
-
-pub async fn fetch_tag_aliases_for(name: &str) -> Result<Vec<TagAlias>, String> {
-    info!("Fetching tag aliases for antecedent_name='{name}'");
-    let client = get_client();
-    let url = build_url(
-        "tag_aliases.json",
-        &[
-            ("search[antecedent_name]", name.to_string()),
-            ("search[status]", "active".to_string()),
-            ("limit", LIMIT.to_string()),
-        ],
-    );
-    debug!("GET {url}");
-    let resp = send_with_retry(client.get(url)).await?;
-
-    let body = resp.text().await.map_err(|e| {
-        error!("aliases body read error: {e}");
-        format!("aliases body: {e}")
-    })?;
-
-    let parsed: TagAliasesApiResponse = json::from_str(&body).map_err(|e| {
-        error!("aliases parse error: {e}");
-        format!("aliases parse: {e} body={body}")
-    })?;
-
-    let all = parsed.into_vec();
-    let total = all.len();
-    let active: Vec<TagAlias> = all.into_iter().filter(|a| a.status == "active").collect();
-    record_alias_probe(name, active.len())?;
-    info!(
-        "Tag aliases fetched: total={}, active={}",
-        total,
-        active.len()
-    );
-    Ok(active)
-}
-
-pub async fn fetch_tag_implications_for(name: &str) -> Result<Vec<TagImplication>, String> {
-    info!("Fetching tag implications for antecedent_name='{name}'");
-    let client = get_client();
-    let url = build_url(
-        "tag_implications.json",
-        &[
-            ("search[antecedent_name]", name.to_string()),
-            ("search[status]", "active".to_string()),
-            ("limit", LIMIT.to_string()),
-        ],
-    );
-    debug!("GET {url}");
-    let resp = send_with_retry(client.get(url)).await?;
-
-    let body = resp.text().await.map_err(|e| {
-        error!("imps body read error: {e}");
-        format!("imps body: {e}")
-    })?;
-
-    let parsed: TagImplicationsApiResponse = json::from_str(&body).map_err(|e| {
-        error!("imps parse error: {e}");
-        format!("imps parse: {e} body={body}")
-    })?;
-
-    let all = parsed.into_vec();
-    let total = all.len();
-    let active: Vec<TagImplication> = all.into_iter().filter(|i| i.status == "active").collect();
-    record_implication_probe(name, active.len())?;
-    info!(
-        "Tag implications fetched: total={}, active={}",
-        total,
-        active.len()
-    );
-    Ok(active)
 }
 
 pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
@@ -281,7 +205,7 @@ pub async fn get_account(account: &TruncatedAccount) -> UserApiResponse {
     );
     let cfg = cfg();
     let client = get_client();
-    let url = format!("{BASE_URL}users/{}.json", account.id);
+    let url = format!("{}users/{}.json", cfg.posts_domain, account.id);
     debug!("GET (auth) {url}");
     let resp = send_with_retry(
         client
