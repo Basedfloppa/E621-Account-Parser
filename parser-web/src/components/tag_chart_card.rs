@@ -62,7 +62,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
 
             let trigger = theme_trigger.clone();
             let callback = Closure::<dyn FnMut(js_sys::Array, _)>::new(
-                move |mutations: js_sys::Array, _obs: web_sys::MutationObserver| {
+                move |mutations: js_sys::Array, _obs: MutationObserver| {
                     for i in 0..mutations.length() {
                         let mutation = mutations.get(i).dyn_into::<web_sys::MutationRecord>().ok();
                         if let Some(m) = mutation {
@@ -174,7 +174,7 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     }
 }
 
-fn draw_chart(canvas: &web_sys::HtmlCanvasElement, tag_counts: &[TagCount]) {
+fn draw_chart(canvas: &HtmlCanvasElement, tag_counts: &[TagCount]) {
     let window = web_sys::window().expect("no global window exists");
     let device_pixel_ratio = window.device_pixel_ratio();
 

@@ -1,7 +1,7 @@
 mod account;
-mod home;
 mod feed;
+mod home;
 
 pub use account::*;
-pub use home::*;
 pub use feed::*;
+pub use home::*;

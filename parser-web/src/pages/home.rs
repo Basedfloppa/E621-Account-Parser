@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use yew::prelude::*;
 
-use crate::{components::*, models};
+use crate::components::*;
+use crate::models::read_config_from_head;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TagCount {
@@ -19,6 +20,7 @@ pub struct UserInfo {
 
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
+    let cfg = read_config_from_head().unwrap();
     let selected_user: UseStateHandle<Option<UserInfo>> = use_state(|| None::<UserInfo>);
     let is_loading: UseStateHandle<bool> = use_state(|| false);
     let tag_counts: UseStateHandle<Vec<TagCount>> = use_state(Vec::<TagCount>::new);
@@ -42,7 +44,7 @@ pub fn home_page() -> Html {
                                 <UserSearchForm
                                     found_user={selected_user.clone()}
                                     error={error.clone()}
-                                    api_base={models::API_BASE}
+                                    api_base={cfg.backend_domain.clone()}
                                     is_loading={is_loading.clone()}
                                 />
 
@@ -55,7 +57,7 @@ pub fn home_page() -> Html {
                                     tag_count={tag_counts.clone()}
                                     found_user={selected_user.clone()}
                                     error={error.clone()}
-                                    api_base={models::API_BASE}
+                                    api_base={cfg.backend_domain.clone()}
                                     is_loading={is_loading.clone()}
                                 />
                             </div>

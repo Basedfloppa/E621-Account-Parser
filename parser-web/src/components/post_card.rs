@@ -44,20 +44,21 @@ pub fn post_card(props: &PostCardProps) -> Html {
     let score_detail = AttrValue::from(format!("↑ {}   ↓ {}", post.score.up, post.score.down));
 
     let onclick = {
+        let cfg = read_config_from_head().unwrap();
         let id = post.id;
         Callback::from(move |e: MouseEvent| {
             if e.button() == 1 {
                 e.prevent_default();
                 if let Some(win) = window() {
                     let _ = win.open_with_url_and_target(
-                        &format!("{}/posts/{}", models::POST_API_BASE, id),
+                        &format!("{}/posts/{}", cfg.posts_domain, id),
                         "_blank",
                     );
                 }
             } else if e.button() == 0 {
                 e.prevent_default();
                 if let Some(win) = window() {
-                    let _ = win.open_with_url(&format!("{}/posts/{}", models::POST_API_BASE, id));
+                    let _ = win.open_with_url(&format!("{}/posts/{}", cfg.posts_domain, id));
                 }
             }
         })

@@ -1,10 +1,9 @@
+use crate::models::read_config_from_head;
+use crate::pages::UserInfo;
 use reqwasm::http::Request;
 use serde_json::to_string;
 use web_sys::{HtmlInputElement, window};
 use yew::prelude::*;
-
-use crate::models::API_BASE;
-use crate::pages::UserInfo;
 
 #[function_component(Account)]
 pub fn account_creator() -> Html {
@@ -15,19 +14,15 @@ pub fn account_creator() -> Html {
     let error = use_state(|| false);
     let loading = use_state(|| false);
 
-    let saved_accounts =
-        use_state(
-            || match web_sys::window().and_then(|w| w.local_storage().ok()?) {
-                Some(storage) => match storage.get_item("e621_accounts") {
-                    Ok(Some(accounts_json)) => {
-                        serde_json::from_str::<Vec<UserInfo>>(&accounts_json)
-                            .unwrap_or_else(|_| vec![])
-                    }
-                    _ => vec![],
-                },
-                _ => vec![],
-            },
-        );
+    let saved_accounts = use_state(|| match window().and_then(|w| w.local_storage().ok()?) {
+        Some(storage) => match storage.get_item("e621_accounts") {
+            Ok(Some(accounts_json)) => {
+                serde_json::from_str::<Vec<UserInfo>>(&accounts_json).unwrap_or_else(|_| vec![])
+            }
+            _ => vec![],
+        },
+        _ => vec![],
+    });
 
     let on_id_change = {
         let id = id.clone();
@@ -66,6 +61,7 @@ pub fn account_creator() -> Html {
             e.prevent_default();
             loading.set(true);
 
+            let cfg = read_config_from_head().unwrap();
             let raw_id = id.trim().to_string();
             let raw_name = name.trim().to_string();
             let raw_blacklist = blacklist.trim().to_string();
@@ -110,9 +106,9 @@ pub fn account_creator() -> Html {
             let mut saved_accounts = saved_accounts.clone().to_vec();
 
             wasm_bindgen_futures::spawn_local(async move {
-                let response = Request::post(&format!("{API_BASE}/account"))
+                let response = Request::post(&format!("{0}/account", cfg.backend_domain))
                     .header("Content-Type", "application/json")
-                    .body(serde_json::to_string(&account).unwrap())
+                    .body(to_string(&account).unwrap())
                     .send()
                     .await;
 

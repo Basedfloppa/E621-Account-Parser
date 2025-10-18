@@ -322,7 +322,7 @@ pub fn feed_page() -> Html {
 }
 
 async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
-    let window = web_sys::window().ok_or("No window available".to_string())?;
+    let window = window().ok_or("No window available".to_string())?;
 
     let opts = RequestInit::new();
     opts.set_method("GET");

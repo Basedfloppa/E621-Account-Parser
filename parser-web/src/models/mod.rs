@@ -1,5 +1,5 @@
 mod post;
-mod api;
+mod config;
 
 pub use post::*;
-pub use api::*;
+pub use config::*;

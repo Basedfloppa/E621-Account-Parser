@@ -38,7 +38,17 @@ cargo install --locked trunk
 
 # 🚀 Running Locally
 
-Backend
+---
+
+## Backend
+
+./config.toml 
+```toml
+admin_user = "username"
+admin_api = "api_key"
+tag_blacklist = ["tag1", "tag2", "tagN"]
+frontend_domains = ["http://localhost:8000"]
+```
 
 http://localhost:8080
 
@@ -47,7 +57,17 @@ cd ./parser-api/
 cargo watch -x run
 ```
 
-Frontend
+---
+
+## Frontend
+
+./static/config.js
+```js
+window.APP_CONFIG = Object.freeze({
+    posts_domain: "https://uri.com",
+    backend_domain: "https://uri.com",
+});
+```
 
 http://localhost:8000
 
