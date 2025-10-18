@@ -12,7 +12,6 @@ use crate::components::*;
 use crate::models::*;
 use crate::pages::UserInfo;
 
-const API_BASE: &str = "https://e621scraperbackend.duckdns.org";
 const PIXELS_BEFORE_REFETCH: f64 = 1000.0;
 
 #[function_component(FeedPage)]
@@ -63,7 +62,11 @@ pub fn feed_page() -> Html {
                 return;
             };
 
-            let mut url = format!("{API_BASE}/recommendations/{}?page={}", user.id, *page);
+            let cfg = read_config_from_head().unwrap();
+            let mut url = format!(
+                "{}/recommendations/{}?page={}",
+                cfg.posts_domain, user.id, *page
+            );
 
             let value = *affinity;
             if value > 0.0 {
