@@ -1,4 +1,3 @@
-use log::{debug, error, info, trace, warn};
 use reqwest::{Client, Response, StatusCode};
 use rocket::serde::json;
 use std::time::Duration;
@@ -49,7 +48,7 @@ fn get_client() -> Client {
 }
 
 async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, String> {
-    let mut delay = Duration::from_millis(300);
+    let mut delay: Duration = Duration::from_millis(300);
 
     for attempt in 0..=MAX_RETRIES {
         if let Some(b) = builder.try_clone() {

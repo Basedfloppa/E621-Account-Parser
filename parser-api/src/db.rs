@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rocket::{
     Build, Rocket,
     fairing::{Fairing, Info, Kind},
@@ -10,26 +10,16 @@ use std::{
     str::FromStr,
 };
 
-use crate::models::{Post, TagAlias, TagCount, TagImplication, TruncatedAccount};
+use crate::models::{
+    Post, RelationMaps, TagAlias, TagCount, TagImplication, TagRelationProbe, TruncatedAccount,
+};
 
-pub struct RelationMaps {
-    pub alias: HashMap<String, String>,
-    pub implied: HashMap<String, Vec<String>>,
+mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("migrations");
 }
 
 pub struct DbInit;
-
-const IN_CHUNK: usize = 800;
-const EMPTY_RECHECK_TTL: ChronoDuration = ChronoDuration::days(30);
-
-#[derive(Debug, Clone)]
-pub struct TagRelationProbe {
-    pub tag: String,
-    pub aliases_last_checked: Option<DateTime<Utc>>,
-    pub aliases_count: i64,
-    pub implications_last_checked: Option<DateTime<Utc>>,
-    pub implications_count: i64,
-}
 
 #[rocket::async_trait]
 impl Fairing for DbInit {
@@ -50,6 +40,9 @@ impl Fairing for DbInit {
         }
     }
 }
+
+const IN_CHUNK: usize = 800;
+const EMPTY_RECHECK_TTL: Duration = Duration::days(30);
 
 fn chunk<'a, T: 'a + Clone>(v: &'a [T], size: usize) -> impl Iterator<Item = Vec<T>> + 'a {
     v.chunks(size).map(|c| c.to_vec())
@@ -84,106 +77,10 @@ fn open_db() -> Result<Connection, String> {
     Ok(connection)
 }
 
-fn ensure_sqlite() -> Result<(), String> {
-    let connection = open_db()?;
+pub fn ensure_sqlite() -> Result<(), String> {
+    let mut conn = open_db().map_err(|e| e.to_string())?;
 
-    connection
-        .execute_batch(
-            "
-    CREATE TABLE IF NOT EXISTS tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        group_type TEXT NOT NULL CHECK (group_type IN (
-            'artist','character','copyright',
-            'general','lore','meta','species'
-        )),
-        UNIQUE(name, group_type)
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS posts (
-        id INTEGER PRIMARY KEY,                
-        created_at TEXT NOT NULL,            
-        score_total INTEGER NOT NULL,
-        fav_count INTEGER NOT NULL,
-        rating TEXT NOT NULL CHECK (rating IN ('s','q','e')),
-        last_seen_at TEXT NOT NULL              
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS accounts (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        blacklisted_tags TEXT,
-        UNIQUE(id, name)
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS tags_posts (
-        tag_id INTEGER NOT NULL,
-        post_id INTEGER NOT NULL,
-        PRIMARY KEY(tag_id, post_id),
-        FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
-        FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
-    ) STRICT;
-    
-    CREATE TABLE IF NOT EXISTS accounts_post (
-        post_id INTEGER NOT NULL,
-        account_id INTEGER NOT NULL,
-        PRIMARY KEY(post_id, account_id),
-        FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
-        FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS account_tag_counts (
-        account_id INTEGER NOT NULL,
-        tag_name   TEXT NOT NULL,
-        group_type TEXT NOT NULL,
-        count      INTEGER NOT NULL,
-        PRIMARY KEY(account_id, tag_name, group_type),
-        FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS tag_aliases (
-        antecedent_name TEXT PRIMARY KEY,
-        consequent_name TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('active','deleted','processing','queued','retired','error','pending')),
-        created_at TEXT,
-        updated_at TEXT
-    ) STRICT;
-
-    CREATE TABLE IF NOT EXISTS tag_implications (
-        antecedent_name TEXT NOT NULL,
-        consequent_name TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('active','deleted','processing','queued','retired','error','pending')),
-        created_at TEXT,
-        updated_at TEXT,
-        PRIMARY KEY(antecedent_name, consequent_name)
-    ) STRICT;
-    
-    CREATE TABLE IF NOT EXISTS tag_relation_probe (
-        tag TEXT PRIMARY KEY,
-        aliases_last_checked TIMESTAMP,
-        aliases_count INTEGER NOT NULL DEFAULT 0,
-        implications_last_checked TIMESTAMP,
-        implications_count INTEGER NOT NULL DEFAULT 0
-    );
-    ",
-        )
-        .map_err(|e| format!("Failed to execute batch: {e}"))?;
-
-    connection
-        .execute_batch(
-            "
-            CREATE INDEX IF NOT EXISTS idx_ap_acc_post ON accounts_post(account_id, post_id);
-            CREATE INDEX IF NOT EXISTS idx_atc_acc_group ON account_tag_counts(account_id, group_type);
-            CREATE INDEX IF NOT EXISTS idx_tag_aliases_consequent ON tag_aliases(consequent_name);
-            CREATE INDEX IF NOT EXISTS idx_tag_imps_ante ON tag_implications(antecedent_name);
-            CREATE INDEX IF NOT EXISTS idx_tags_name_group ON tags(name, group_type);
-            CREATE INDEX IF NOT EXISTS idx_tp_tag    ON tags_posts(tag_id);
-            CREATE INDEX IF NOT EXISTS idx_tp_post   ON tags_posts(post_id);
-            CREATE INDEX IF NOT EXISTS idx_ap_account ON accounts_post(account_id);
-            CREATE INDEX IF NOT EXISTS idx_ap_post    ON accounts_post(post_id);
-        ",
-        )
-        .map_err(|e| format!("Failed to execute batch: {e}"))?;
+    embedded::migrations::runner().run(&mut conn).unwrap();
 
     Ok(())
 }
@@ -681,15 +578,13 @@ pub fn load_relation_maps_for(tags: &HashSet<String>) -> Result<RelationMaps, St
 
     // aliases
     for part in chunk(&all, IN_CHUNK) {
-        let placeholders = std::iter::repeat("?")
-            .take(part.len())
+        let placeholders = std::iter::repeat_n("?", part.len())
             .collect::<Vec<_>>()
             .join(",");
         let mut st = conn
             .prepare(&format!(
                 "SELECT antecedent_name, consequent_name FROM tag_aliases
-             WHERE status='active' AND antecedent_name IN ({})",
-                placeholders
+             WHERE status='active' AND antecedent_name IN ({placeholders})"
             ))
             .map_err(|e| format!("prep alias map: {e}"))?;
         let rows = st
@@ -705,15 +600,13 @@ pub fn load_relation_maps_for(tags: &HashSet<String>) -> Result<RelationMaps, St
 
     // implications
     for part in chunk(&all, IN_CHUNK) {
-        let placeholders = std::iter::repeat("?")
-            .take(part.len())
+        let placeholders = std::iter::repeat_n("?", part.len())
             .collect::<Vec<_>>()
             .join(",");
         let mut st = conn
             .prepare(&format!(
                 "SELECT antecedent_name, consequent_name FROM tag_implications
-             WHERE status='active' AND antecedent_name IN ({})",
-                placeholders
+             WHERE status='active' AND antecedent_name IN ({placeholders})"
             ))
             .map_err(|e| format!("prep imp map: {e}"))?;
         let rows = st
@@ -729,6 +622,7 @@ pub fn load_relation_maps_for(tags: &HashSet<String>) -> Result<RelationMaps, St
 
     Ok(RelationMaps { alias, implied })
 }
+
 pub fn save_posts_tags_batch_with_maps(
     posts: &[Post],
     maps: &RelationMaps,

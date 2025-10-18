@@ -2,7 +2,6 @@
 extern crate rocket;
 
 use chrono::Utc;
-use log::info;
 use moka::sync::Cache;
 use rocket::{State, futures::lock::Mutex, serde::json::Json};
 use rocket::{get, http::Method, routes};
