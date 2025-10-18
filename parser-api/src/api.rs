@@ -36,8 +36,8 @@ fn build_url(path: &str, params: &[(&str, String)]) -> String {
 
 fn get_client() -> Client {
     info!("Building HTTP client");
-    reqwest::Client::builder()
-        .user_agent("account scraper (by zorolin)")
+    Client::builder()
+        .user_agent(format!("account scraper (by {0})", cfg().admin_user))
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .build()
@@ -73,7 +73,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
 
         sleep(Duration::from_millis(RPS_DELAY_MS)).await;
 
-        match builder
+        return match builder
             .try_clone()
             .ok_or_else(|| {
                 let m = "unable to clone request".to_string();
@@ -113,7 +113,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                 } else {
                     warn!("Request completed with non-retryable status {status}");
                 }
-                return Ok(resp);
+                Ok(resp)
             }
             Err(e) => {
                 if attempt < MAX_RETRIES {
@@ -129,7 +129,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                     continue;
                 }
                 error!("Request failed after {} attempts: {}", MAX_RETRIES + 1, e);
-                return Err(format!("request failed after retries: {e}"));
+                Err(format!("request failed after retries: {e}"))
             }
         }
     }
@@ -262,7 +262,7 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
         return Vec::new();
     }
 
-    let posts = match rocket::serde::json::from_str::<PostsApiResponse>(&body) {
+    let posts = match json::from_str::<PostsApiResponse>(&body) {
         Ok(r) => r.posts,
         Err(e) => {
             let preview = body.chars().take(200).collect::<String>();

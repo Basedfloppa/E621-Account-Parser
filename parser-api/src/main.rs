@@ -1,31 +1,24 @@
 #[macro_use]
 extern crate rocket;
 
-use anyhow::Context;
-use arc_swap::ArcSwap;
 use chrono::Utc;
 use log::info;
 use moka::sync::Cache;
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use rocket::{State, futures::lock::Mutex, serde::json::Json};
 use rocket::{get, http::Method, routes};
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use rusqlite::Result;
-use serde::Deserialize;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
-    sync::{Arc, LazyLock},
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
+    sync::Arc,
+    time::Duration,
 };
 use tokio::{
     sync::{Semaphore, mpsc},
     task::JoinSet,
 };
 
+use crate::models::{cfg, default_path, reload_from, start_config_watcher};
 use crate::{
     db::{
         DbInit, find_missing_relations, get_account_by_id, get_account_by_name, get_tag_counts,
@@ -45,122 +38,9 @@ const QUEUE_CAP: usize = 10_000;
 const BATCH_SIZE: usize = 500;
 const DEDUP_TTL_SECS: u64 = 60 * 30;
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct Config {
-    pub admin_user: String,
-    pub admin_id: u32,
-    pub admin_api: String,
-    pub tag_blacklist: Vec<String>,
-}
-
-static CONFIG: LazyLock<ArcSwap<Config>> = LazyLock::new(|| {
-    let p = default_path().expect("config path");
-    let cfg = load_config(&p).expect("initial config");
-    ArcSwap::from_pointee(cfg)
-});
-
 #[derive(Clone)]
 struct AppState {
     tx: mpsc::Sender<Vec<String>>,
-}
-
-struct ConfigWatcher {
-    stop: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl Drop for ConfigWatcher {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
-        }
-    }
-}
-
-fn load_config(p: &Path) -> anyhow::Result<Config> {
-    let s = fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
-    toml::from_str(&s).context("parsing config.toml")
-}
-
-fn default_path() -> anyhow::Result<PathBuf> {
-    Ok(PathBuf::from("config.toml"))
-}
-
-fn start_config_watcher(path: PathBuf) -> anyhow::Result<ConfigWatcher> {
-    let parent = path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-    let stop = Arc::new(AtomicBool::new(false));
-    let stop_flag = stop.clone();
-
-    let handle = thread::spawn(move || {
-        let (tx, rx) = std::sync::mpsc::channel::<notify::Result<Event>>();
-
-        let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| {
-            let _ = tx.send(res);
-        })
-        .expect("create watcher");
-
-        watcher
-            .watch(&parent, RecursiveMode::NonRecursive)
-            .expect("watch parent");
-
-        let mut last_mtime: Option<SystemTime> = file_mtime(&path).ok();
-
-        while !stop_flag.load(Ordering::Relaxed) {
-            match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(Ok(event)) => {
-                    if event
-                        .paths
-                        .iter()
-                        .any(|p| p == &path || p.file_name() == path.file_name())
-                    {
-                        thread::sleep(Duration::from_millis(120));
-
-                        if let Ok(mtime) = file_mtime(&path) {
-                            if last_mtime.is_none_or(|old| old < mtime) {
-                                match reload_from(&path) {
-                                    Ok(_) => {
-                                        last_mtime = Some(mtime);
-                                        eprintln!("[config] reloaded {}", path.display());
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[config] reload failed: {e:#}");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(Err(e)) => eprintln!("[config] watch error: {e}"),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-    });
-
-    Ok(ConfigWatcher {
-        stop,
-        handle: Some(handle),
-    })
-}
-
-fn file_mtime(p: &Path) -> std::io::Result<SystemTime> {
-    fs::metadata(p)?.modified()
-}
-
-pub fn cfg() -> Arc<Config> {
-    CONFIG.load_full()
-}
-
-pub fn reload_from(p: &Path) -> anyhow::Result<()> {
-    let new = load_config(p)?;
-    let arc = Arc::new(new);
-    CONFIG.store(arc.clone());
-    eprintln!("[config] current value:\n{arc:#?}");
-    Ok(())
 }
 
 async fn relations_worker(mut rx: mpsc::Receiver<Vec<String>>, dedup: Cache<String, ()>) {
@@ -208,7 +88,7 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
             let sem = Arc::clone(&sem);
             jobs.spawn(async move {
                 let _permit = sem.acquire_owned().await.expect("semaphore");
-                let res = crate::api::fetch_tag_aliases_for(&t).await;
+                let res = api::fetch_tag_aliases_for(&t).await;
                 (t, res)
             });
         }
@@ -230,7 +110,7 @@ async fn refresh_relations_for_tags(tags: &HashSet<String>) -> Result<(), String
             let sem = Arc::clone(&sem);
             jobs.spawn(async move {
                 let _permit = sem.acquire_owned().await.expect("semaphore");
-                let res = crate::api::fetch_tag_implications_for(&t).await;
+                let res = api::fetch_tag_implications_for(&t).await;
                 (t, res)
             });
         }
@@ -254,7 +134,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
         .iter()
         .map(|s| s.to_lowercase())
         .collect();
-    let account = db::get_account_by_id(account_id).map_err(|e| e.to_string())?;
+    let account = get_account_by_id(account_id).map_err(|e| e.to_string())?;
     let user = api::get_account(&account).await;
     let favcount = match user {
         UserApiResponse::FullCurrentUser(u) => u.favorite_count,
@@ -270,7 +150,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
         let raw_posts = api::get_favorites(&account, i).await;
         let posts: Vec<Post> = raw_posts
             .into_iter()
-            .map(|p| strip_blacklisted(p, &blacklist))
+            .map(|p| strip_blacklisted_tags(p, &blacklist))
             .collect();
         info!("{} post(s) found on page {}", posts.len(), i);
 
@@ -314,17 +194,17 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
     Ok(json::to_string(&"okay :3").unwrap())
 }
 
-fn strip_blacklisted(mut p: Post, blacklist: &HashSet<String>) -> Post {
-    let norm = |v: &mut Vec<String>| {
+fn strip_blacklisted_tags(mut p: Post, blacklist: &HashSet<String>) -> Post {
+    let filter = |v: &mut Vec<String>| {
         v.retain(|t| !blacklist.contains(&t.to_lowercase().trim().to_string()));
     };
-    norm(&mut p.tags.artist);
-    norm(&mut p.tags.character);
-    norm(&mut p.tags.copyright);
-    norm(&mut p.tags.general);
-    norm(&mut p.tags.lore);
-    norm(&mut p.tags.meta);
-    norm(&mut p.tags.species);
+    filter(&mut p.tags.artist);
+    filter(&mut p.tags.character);
+    filter(&mut p.tags.copyright);
+    filter(&mut p.tags.general);
+    filter(&mut p.tags.lore);
+    filter(&mut p.tags.meta);
+    filter(&mut p.tags.species);
     p
 }
 
@@ -405,7 +285,7 @@ async fn get_recommendations(
         .map_err(|e| std::io::Error::other(format!("Failed to get tag counts: {e}")))?
         .to_vec();
 
-    let account = db::get_account_by_id(account_id)
+    let account = get_account_by_id(account_id)
         .map_err(|e| std::io::Error::other(format!("Failed to get account: {e}")))?;
     let posts: Vec<Post> = api::get_posts(&account, page).await;
 
@@ -470,19 +350,11 @@ async fn rocket() -> _ {
         .build();
 
     let cors = CorsOptions {
-        allowed_origins: AllowedOrigins::all(),
-        allowed_methods: [
-            Method::Get,
-            Method::Post,
-            Method::Put,
-            Method::Patch,
-            Method::Delete,
-            Method::Options,
-            Method::Head,
-        ]
-        .into_iter()
-        .map(From::from)
-        .collect(),
+        allowed_origins: AllowedOrigins::some_exact(&cfg().frontend_domains),
+        allowed_methods: [Method::Get, Method::Post]
+            .into_iter()
+            .map(From::from)
+            .collect(),
         allowed_headers: AllowedHeaders::all(),
         allow_credentials: true,
         max_age: Some(86400),

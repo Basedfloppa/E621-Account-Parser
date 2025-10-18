@@ -62,7 +62,7 @@ fn parse_rfc3339_opt(s: Option<String>) -> Option<DateTime<Utc>> {
 
 fn open_db() -> Result<Connection, String> {
     if fs::exists("database.db").is_err() {
-        if let Err(e) = (fs::File::create("database.db")) {
+        if let Err(e) = fs::File::create("database.db") {
             eprintln!("{e}")
         }
     }
@@ -216,7 +216,7 @@ shota";
     Ok(())
 }
 
-pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount, String> {
+pub fn get_account_by_name(name: String) -> Result<TruncatedAccount, String> {
     let conn = open_db()?;
 
     let mut stmt = conn
@@ -248,7 +248,7 @@ pub fn get_account_by_name(name: String) -> rusqlite::Result<TruncatedAccount, S
     }
 }
 
-pub fn get_account_by_id(id: i32) -> rusqlite::Result<TruncatedAccount, String> {
+pub fn get_account_by_id(id: i32) -> Result<TruncatedAccount, String> {
     let conn = open_db()?;
 
     let mut stmt = conn
@@ -424,7 +424,7 @@ pub fn set_tag_counts(account_id: i32) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_tag_counts(account_id: i32) -> rusqlite::Result<Vec<TagCount>, String> {
+pub fn get_tag_counts(account_id: i32) -> Result<Vec<TagCount>, String> {
     let conn = open_db()?;
 
     let mut stmt = conn
