@@ -1,5 +1,5 @@
 use crate::models::{Post, TagCount, TruncatedAccount};
-use chrono::{DateTime, Duration, Utc};
+use chrono::Utc;
 use rocket::{
     Build, Rocket,
     fairing::{Fairing, Info, Kind},
@@ -36,18 +36,6 @@ impl Fairing for DbInit {
             }
         }
     }
-}
-
-const IN_CHUNK: usize = 800;
-const EMPTY_RECHECK_TTL: Duration = Duration::days(30);
-
-fn chunk<'a, T: 'a + Clone>(v: &'a [T], size: usize) -> impl Iterator<Item = Vec<T>> + 'a {
-    v.chunks(size).map(|c| c.to_vec())
-}
-
-fn parse_rfc3339_opt(s: Option<String>) -> Option<DateTime<Utc>> {
-    s.and_then(|v| chrono::DateTime::parse_from_rfc3339(&v).ok())
-        .map(|dt| dt.with_timezone(&Utc))
 }
 
 fn open_db() -> Result<Connection, String> {
@@ -372,7 +360,7 @@ pub fn save_posts_tags_batch_with_maps(
             .prepare_cached("INSERT OR IGNORE INTO tags_posts (tag_id, post_id) VALUES (?1, ?2)")
             .map_err(|e| format!("prep link: {e}"))?;
 
-        |name: &str, group: &str, post_id: i64| -> Result<(), String> {
+        let _ = |name: &str, group: &str, post_id: i64| -> Result<(), String> {
             if blacklist.contains(&name.to_lowercase().trim().to_string()) {
                 return Ok(());
             }
