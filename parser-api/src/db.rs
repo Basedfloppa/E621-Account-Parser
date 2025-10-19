@@ -6,7 +6,7 @@ use rocket::{
 };
 use rusqlite::{Connection, Result, params};
 use std::path::PathBuf;
-use std::{collections::HashSet, env, fs};
+use std::{collections::HashSet, env, fs, fs::File};
 
 mod embedded {
     use refinery::embed_migrations;
@@ -63,13 +63,9 @@ fn open_db() -> Result<Connection, String> {
 }
 
 pub fn ensure_sqlite() -> Result<(), String> {
-    let crate_root = env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR environment variable not present");
-    let c = PathBuf::from(crate_root);
-
-    let location = c.join("migrations");
-
-    println!("{location:?} == location");
+    if fs::exists("database.db").is_err() {
+        fs::File::create("database.db");
+    }
 
     let mut conn = open_db().map_err(|e| e.to_string())?;
 
