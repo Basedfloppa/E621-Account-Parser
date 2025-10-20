@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -38,7 +39,7 @@ pub struct FullUser {
     pub profile_artinfo: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct TruncatedAccount {
     pub id: i32,

@@ -1,6 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -8,10 +9,12 @@ pub struct PostsApiResponse {
     pub posts: Vec<Post>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Post {
     pub id: i64,
+    #[schemars(with = "String", description = "RFC3339 timestamp")]
     pub created_at: DateTime<Utc>,
+    #[schemars(with = "String", description = "RFC3339 timestamp")]
     pub updated_at: DateTime<Utc>,
     pub file: Option<FileInfo>,
     pub preview: Option<Preview>,
@@ -35,7 +38,7 @@ pub struct Post {
     pub duration: Option<f64>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct FileInfo {
     pub width: i64,
     pub height: i64,
@@ -45,14 +48,14 @@ pub struct FileInfo {
     pub url: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Preview {
     pub width: i64,
     pub height: i64,
     pub url: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Sample {
     pub has: Option<bool>,
     pub height: Option<i64>,
@@ -63,7 +66,7 @@ pub struct Sample {
     pub samples: Option<Samples>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct PostSampleAlternate {
     pub fps: f32,
     pub codec: Option<String>,
@@ -73,19 +76,19 @@ pub struct PostSampleAlternate {
     pub url: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Alternates {
     pub has: Option<bool>,
     pub original: Option<PostSampleAlternate>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Variants {
     pub webm: PostSampleAlternate,
     pub mp4: PostSampleAlternate,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Samples {
     #[serde(rename = "480p")]
     pub p480: PostSampleAlternate,
@@ -93,14 +96,14 @@ pub struct Samples {
     pub p720: PostSampleAlternate,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Score {
     pub up: i64,
     pub down: i64,
     pub total: i64,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Tags {
     pub general: Vec<String>,
     pub artist: Vec<String>,
@@ -113,7 +116,7 @@ pub struct Tags {
     pub contributor: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Flags {
     pub pending: bool,
     pub flagged: bool,
@@ -123,7 +126,7 @@ pub struct Flags {
     pub deleted: bool,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Rating {
     S,
@@ -141,10 +144,16 @@ impl Display for Rating {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Relationships {
     pub parent_id: Option<i64>,
     pub has_children: bool,
     pub has_active_children: bool,
     pub children: Vec<i64>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
+pub struct ScoredPost {
+    pub post: Post,
+    pub score: f32,
 }

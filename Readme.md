@@ -43,7 +43,6 @@ cargo install --locked trunk
 admin_user = "username"
 admin_api = "api_key"
 tag_blacklist = ["tag1", "tag2", "tagN"]
-frontend_domains = ["http://localhost:8000"]
 posts_domain = "https://uri.com"
 ```
 

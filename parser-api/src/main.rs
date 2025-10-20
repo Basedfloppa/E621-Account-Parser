@@ -2,22 +2,25 @@
 extern crate rocket;
 
 use chrono::Utc;
+use rocket::{State, get};
 use rocket::{futures::lock::Mutex, serde::json::Json};
-use rocket::{get, http::Method, routes};
-use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use rusqlite::Result;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
-use crate::models::{cfg, default_path, reload_from, start_config_watcher};
+use crate::models::{
+    ScoredPost, UserApiResponse, cfg, default_path, reload_from, start_config_watcher,
+};
 use crate::{
     db::{
         DbInit, get_account_by_id, get_account_by_name, get_tag_counts, set_account, set_tag_counts,
     },
-    models::{Post, TagCount, TruncatedAccount, UserApiResponse},
+    models::{Post, TagCount, TruncatedAccount},
     rocket::serde::json,
     utils::Priors,
 };
+use rocket_okapi::okapi::openapi3::OpenApi;
+use rocket_okapi::{openapi, openapi_get_routes_spec, settings::OpenApiSettings, swagger_ui::*};
 
 mod api;
 mod db;
@@ -26,6 +29,7 @@ mod utils;
 
 const QUEUE_CAP: usize = 10_000;
 
+#[openapi(tag = "Processing")]
 #[post("/process/<account_id>")]
 async fn process_posts(account_id: i32) -> Result<String, String> {
     let blacklist: HashSet<String> = cfg()
@@ -75,6 +79,7 @@ fn strip_blacklisted_tags(mut p: Post, blacklist: &HashSet<String>) -> Post {
     p
 }
 
+#[openapi(tag = "Accounts")]
 #[get("/account/<account_id>/tag_counts")]
 async fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, String> {
     match get_tag_counts(account_id) {
@@ -87,6 +92,7 @@ async fn get_account_tag_counts(account_id: i32) -> Result<Json<Vec<TagCount>>, 
     }
 }
 
+#[openapi(tag = "Users")]
 #[get("/user/name/<name>")]
 async fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> {
     match get_account_by_name(name.to_string()) {
@@ -99,6 +105,7 @@ async fn get_account_name(name: &str) -> Result<Json<TruncatedAccount>, String> 
     }
 }
 
+#[openapi(tag = "Users")]
 #[get("/user/id/<id>")]
 async fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
     match get_account_by_id(id) {
@@ -111,6 +118,7 @@ async fn get_account_id(id: i32) -> Result<Json<TruncatedAccount>, String> {
     }
 }
 
+#[openapi(tag = "Accounts")]
 #[post("/account", data = "<account>")]
 async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     match set_account(account.id, &account.name, &account.blacklist) {
@@ -123,12 +131,13 @@ async fn create_account(account: Json<TruncatedAccount>) -> Result<(), String> {
     }
 }
 
+#[openapi(tag = "Recommendations")]
 #[get("/recommendations/<account_id>?<page>&<affinity_threshold>")]
 async fn get_recommendations(
     account_id: i32,
     page: Option<i32>,
     affinity_threshold: Option<f32>,
-) -> Result<Json<Vec<(Post, f32)>>, std::io::Error> {
+) -> Result<Json<Vec<ScoredPost>>, std::io::Error> {
     let group_weights = HashMap::from([
         ("artist", 2.0),
         ("character", 1.5),
@@ -158,7 +167,7 @@ async fn get_recommendations(
 
     let idf: Option<HashMap<&str, f32>> = None;
 
-    let mut scored: Vec<(Post, f32)> = Vec::with_capacity(posts.len());
+    let mut scored: Vec<ScoredPost> = Vec::with_capacity(posts.len());
     for post in posts {
         let mut post_tags: Vec<(String, String)> = Vec::new();
         let tmp_post = post.clone();
@@ -193,14 +202,22 @@ async fn get_recommendations(
             Some((&priors, score_total, fav_count, created_at)),
         );
 
-        scored.push((tmp_post, s));
+        scored.push(ScoredPost {
+            post: tmp_post,
+            score: s,
+        });
     }
 
     if let Some(threshold) = affinity_threshold {
-        scored.retain(|(_, s)| *s >= threshold);
+        scored.retain(|sp| sp.score >= threshold);
     }
 
     Ok(Json(scored))
+}
+
+#[get("/openapi.json")]
+fn openapi_json(spec: &State<OpenApi>) -> Json<OpenApi> {
+    Json(spec.inner().clone())
 }
 
 #[launch]
@@ -208,21 +225,30 @@ async fn rocket() -> _ {
     let path = default_path().unwrap();
     let _ = reload_from(&path);
     let watcher = start_config_watcher(path).unwrap();
-
     let (_tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
+
+    let settings = OpenApiSettings::new();
+    let (api_routes, spec) = openapi_get_routes_spec![
+        settings:
+        process_posts,
+        get_account_tag_counts,
+        get_account_id,
+        get_account_name,
+        create_account,
+        get_recommendations
+    ];
 
     rocket::build()
         .manage(Mutex::new(watcher))
+        .manage(spec)
+        .mount("/api", api_routes)
+        .mount("/", routes![openapi_json])
         .mount(
-            "/api",
-            routes![
-                process_posts,
-                get_account_tag_counts,
-                get_account_id,
-                get_account_name,
-                create_account,
-                get_recommendations,
-            ],
+            "/swagger-ui",
+            make_swagger_ui(&SwaggerUIConfig {
+                url: "/openapi.json".to_owned(),
+                ..Default::default()
+            }),
         )
         .attach(DbInit)
 }
