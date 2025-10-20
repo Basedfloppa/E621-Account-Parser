@@ -242,11 +242,11 @@ async fn rocket() -> _ {
         .manage(Mutex::new(watcher))
         .manage(spec)
         .mount("/api", api_routes)
-        .mount("/", routes![openapi_json])
+        .mount("/api", routes![openapi_json])
         .mount(
-            "/swagger-ui",
+            "/api/swagger-ui",
             make_swagger_ui(&SwaggerUIConfig {
-                url: "/openapi.json".to_owned(),
+                url: "/api/openapi.json".to_owned(),
                 ..Default::default()
             }),
         )

@@ -96,6 +96,7 @@ pub fn feed_page() -> Html {
                         let mut seen: HashSet<i64> = merged.iter().map(|p| p.0.id).collect();
                         new_items.retain(|p| seen.insert(p.0.id));
 
+                        web_sys::console::log_1(&format!("Received recommendation page with {:?}", &new_items.len()).into());
                         let added = new_items.len();
                         if added > 0 {
                             new_items.sort_by(|a, b| {
@@ -109,6 +110,7 @@ pub fn feed_page() -> Html {
                         done();
                     }
                     Err(e) => {
+                        web_sys::console::log_1(&e.clone().into());
                         error.set(Some(e));
                         done();
                     }
