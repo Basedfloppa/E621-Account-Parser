@@ -211,24 +211,10 @@ async fn rocket() -> _ {
 
     let (_tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
-    let cors = CorsOptions {
-        allowed_origins: AllowedOrigins::some_exact(&cfg().frontend_domains),
-        allowed_methods: [Method::Get, Method::Post]
-            .into_iter()
-            .map(From::from)
-            .collect(),
-        allowed_headers: AllowedHeaders::all(),
-        allow_credentials: true,
-        max_age: Some(86400),
-        ..Default::default()
-    }
-    .to_cors()
-    .expect("CORS configuration");
-
     rocket::build()
         .manage(Mutex::new(watcher))
         .mount(
-            "/",
+            "/api",
             routes![
                 process_posts,
                 get_account_tag_counts,
@@ -238,6 +224,5 @@ async fn rocket() -> _ {
                 get_recommendations,
             ],
         )
-        .attach(cors)
         .attach(DbInit)
 }
