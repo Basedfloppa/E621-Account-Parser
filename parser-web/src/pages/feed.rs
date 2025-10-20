@@ -16,7 +16,7 @@ const PIXELS_BEFORE_REFETCH: f64 = 1000.0;
 
 #[function_component(FeedPage)]
 pub fn feed_page() -> Html {
-    let posts = use_state(Vec::<(Post, f32)>::new);
+    let posts = use_state(Vec::<ScoredPost>::new);
     let page = use_state(|| 1usize);
     let is_loading = use_state(|| false);
     let inflight = use_mut_ref(|| Cell::new(false));
@@ -89,18 +89,23 @@ pub fn feed_page() -> Html {
                     inflight_done.borrow().set(false);
                 };
 
-                match fetch_json::<Vec<(Post, f32)>>(&url).await {
+                match fetch_json::<Vec<ScoredPost>>(&url).await {
                     Ok(mut new_items) => {
                         use std::collections::HashSet;
-                        let mut merged = (*posts).clone();
-                        let mut seen: HashSet<i64> = merged.iter().map(|p| p.0.id).collect();
-                        new_items.retain(|p| seen.insert(p.0.id));
+                        let mut merged: Vec<ScoredPost> = (*posts).clone();
+                        let mut seen: HashSet<i64> = merged.iter().map(|p| p.post.id).collect();
+                        new_items.retain(|p| seen.insert(p.post.id));
 
-                        web_sys::console::log_1(&format!("Received recommendation page with {:?}", &new_items.len()).into());
+                        web_sys::console::log_1(
+                            &format!("Received recommendation page with {:?}", &new_items.len())
+                                .into(),
+                        );
                         let added = new_items.len();
                         if added > 0 {
                             new_items.sort_by(|a, b| {
-                                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                b.score
+                                    .partial_cmp(&a.score)
+                                    .unwrap_or(std::cmp::Ordering::Equal)
                             });
                             merged.extend(new_items);
                             posts.set(merged);
@@ -300,11 +305,11 @@ pub fn feed_page() -> Html {
 
             <div class="row g-3" aria-busy={(*is_loading).to_string()}>
                 {
-                    posts.iter().map(|(post, _score)| {
-                        let p = post.clone();
+                    posts.iter().map(|sp| {
+                        let sp = sp.clone();
                         html! {
-                            <div key={p.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
-                                <PostCard affinity={_score} post={Rc::new(p)}/>
+                            <div key={sp.post.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
+                                <PostCard affinity={sp.score} post={Rc::new(sp.post)}/>
                             </div>
                         }
                     }).collect::<Html>()

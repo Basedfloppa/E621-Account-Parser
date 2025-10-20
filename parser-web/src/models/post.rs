@@ -131,3 +131,9 @@ pub struct Relationships {
     pub has_active_children: bool,
     pub children: Vec<i64>,
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ScoredPost {
+    pub post: Post,
+    pub score: f32,
+}
