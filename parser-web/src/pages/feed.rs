@@ -65,7 +65,7 @@ pub fn feed_page() -> Html {
             let cfg = read_config_from_head().unwrap();
             let mut url = format!(
                 "{}/recommendations/{}?page={}",
-                cfg.posts_domain, user.id, *page
+                cfg.backend_domain, user.id, *page
             );
 
             let value = *affinity;

@@ -5,8 +5,7 @@ use rocket::{
     fairing::{Fairing, Info, Kind},
 };
 use rusqlite::{Connection, Result, params};
-use std::path::PathBuf;
-use std::{collections::HashSet, env, fs, fs::File};
+use std::{collections::HashSet, fs};
 
 mod embedded {
     use refinery::embed_migrations;
@@ -64,7 +63,7 @@ fn open_db() -> Result<Connection, String> {
 
 pub fn ensure_sqlite() -> Result<(), String> {
     if fs::exists("database.db").is_err() {
-        fs::File::create("database.db");
+        fs::File::create("database.db").map_err(|e| format!("Failed to create file: {e}"))?;
     }
 
     let mut conn = open_db().map_err(|e| e.to_string())?;
@@ -334,10 +333,7 @@ pub fn get_tag_counts(account_id: i32) -> Result<Vec<TagCount>, String> {
     Ok(counts)
 }
 
-pub fn save_posts_tags_batch_with_maps(
-    posts: &[Post],
-    blacklist: &HashSet<String>,
-) -> Result<(), String> {
+pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Result<(), String> {
     if posts.is_empty() {
         return Ok(());
     }
@@ -353,26 +349,41 @@ pub fn save_posts_tags_batch_with_maps(
             .prepare_cached("SELECT id FROM tags WHERE name = ?1 AND group_type = ?2")
             .map_err(|e| format!("prep sel id: {e}"))?;
         let mut link = tx
-            .prepare_cached("INSERT OR IGNORE INTO tags_posts (tag_id, post_id) VALUES (?1, ?2)")
+            .prepare_cached("INSERT OR IGNORE INTO tags_posts(tag_id, post_id) VALUES (?1, ?2)")
             .map_err(|e| format!("prep link: {e}"))?;
 
-        let _ = |name: &str, group: &str, post_id: i64| -> Result<(), String> {
-            if blacklist.contains(&name.to_lowercase().trim().to_string()) {
-                return Ok(());
+        for post in posts {
+            for (group, tags) in [
+                ("artist", &post.tags.artist),
+                ("character", &post.tags.character),
+                ("copyright", &post.tags.copyright),
+                ("general", &post.tags.general),
+                ("lore", &post.tags.lore),
+                ("meta", &post.tags.meta),
+                ("species", &post.tags.species),
+            ] {
+                let pid = post.id;
+                for tag in tags {
+                    if tag.is_empty() || blacklist.contains(tag) {
+                        continue;
+                    }
+
+                    insert_tag
+                        .execute(params![&tag, group])
+                        .map_err(|e| format!("ins tag: {e}"))?;
+
+                    let tag_id: i64 = select_id
+                        .query_row(params![&tag, group], |r| r.get(0))
+                        .map_err(|e| format!("get id {tag}:{group}: {e}"))?;
+
+                    link.execute(params![tag_id, pid])
+                        .map_err(|e| format!("link tag_id={tag_id} post_id={pid}: {e}"))?;
+                }
             }
-            insert_tag
-                .execute(rusqlite::params![name, group])
-                .map_err(|e| format!("ins tag: {e}"))?;
-            let id: i64 = select_id
-                .query_row(rusqlite::params![name, group], |r| r.get(0))
-                .map_err(|e| format!("get id {name}:{group}: {e}"))?;
-            link.execute(rusqlite::params![id, post_id])
-                .map_err(|e| format!("link: {e}"))?;
-            Ok(())
-        };
+        }
     }
 
     tx.commit()
-        .map_err(|e| format!("commit save_posts_tags_batch_with_maps: {e}"))?;
+        .map_err(|e| format!("commit save_posts_tags_batch: {e}"))?;
     Ok(())
 }

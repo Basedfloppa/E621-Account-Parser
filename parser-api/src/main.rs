@@ -2,7 +2,7 @@
 extern crate rocket;
 
 use chrono::Utc;
-use rocket::{State, futures::lock::Mutex, serde::json::Json};
+use rocket::{futures::lock::Mutex, serde::json::Json};
 use rocket::{get, http::Method, routes};
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use rusqlite::Result;
@@ -26,13 +26,8 @@ mod utils;
 
 const QUEUE_CAP: usize = 10_000;
 
-#[derive(Clone)]
-struct AppState {
-    tx: mpsc::Sender<Vec<String>>,
-}
-
 #[post("/process/<account_id>")]
-async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<String, String> {
+async fn process_posts(account_id: i32) -> Result<String, String> {
     let blacklist: HashSet<String> = cfg()
         .tag_blacklist
         .iter()
@@ -48,8 +43,6 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
 
     db::drop_account_posts(account_id).map_err(|e| format!("Failed to drop account posts: {e}"))?;
 
-    let mut seen_tags: HashSet<String> = HashSet::new();
-
     for i in 1..=pages {
         let raw_posts = api::get_favorites(&account, i).await;
         let posts: Vec<Post> = raw_posts
@@ -60,36 +53,7 @@ async fn process_posts(account_id: i32, state: &State<AppState>) -> Result<Strin
 
         db::save_posts(&posts, account.id).map_err(|e| format!("Failed to save posts: {e}"))?;
 
-        let page_tagset: HashSet<String> = posts
-            .iter()
-            .flat_map(|p| {
-                p.tags
-                    .artist
-                    .iter()
-                    .chain(p.tags.character.iter())
-                    .chain(p.tags.copyright.iter())
-                    .chain(p.tags.general.iter())
-                    .chain(p.tags.lore.iter())
-                    .chain(p.tags.meta.iter())
-                    .chain(p.tags.species.iter())
-                    .filter(|t| !blacklist.contains(t.to_lowercase().trim()))
-                    .map(|t| t.to_lowercase().trim().to_string())
-            })
-            .collect();
-
-        let to_refresh: Vec<String> = page_tagset.difference(&seen_tags).cloned().collect();
-
-        if !to_refresh.is_empty() {
-            match state.tx.try_send(to_refresh.clone()) {
-                Ok(_) => info!("queued {} tags for background refresh", to_refresh.len()),
-                Err(err) => {
-                    eprintln!("warn: tag refresh queue is full ({err}); skipping enqueue");
-                }
-            }
-            seen_tags.extend(page_tagset.into_iter());
-        }
-
-        db::save_posts_tags_batch_with_maps(&posts, &blacklist)
+        db::save_posts_tags_batch(&posts, &blacklist)
             .map_err(|e| format!("Failed to save tags for page {i}: {e}"))?;
     }
 
@@ -245,7 +209,7 @@ async fn rocket() -> _ {
     let _ = reload_from(&path);
     let watcher = start_config_watcher(path).unwrap();
 
-    let (tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
+    let (_tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
     let cors = CorsOptions {
         allowed_origins: AllowedOrigins::some_exact(&cfg().frontend_domains),
@@ -262,7 +226,6 @@ async fn rocket() -> _ {
     .expect("CORS configuration");
 
     rocket::build()
-        .manage(AppState { tx })
         .manage(Mutex::new(watcher))
         .mount(
             "/",
