@@ -22,3 +22,6 @@ toml = { version = "*" }
 arc-swap = { version = "*" }
 rocket_okapi = { version = "0.9", features = ["swagger"] }
 schemars = { version = "0.8.21", features = ["chrono"] }
+
+[target.'cfg(debug_assertions)'.dependencies]
+rocket_cors = "0.6.0"

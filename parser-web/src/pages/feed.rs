@@ -14,6 +14,43 @@ use crate::pages::UserInfo;
 
 const PIXELS_BEFORE_REFETCH: f64 = 1000.0;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GridType {
+    Auto,
+    Three,
+    Two,
+    One,
+}
+
+impl GridType {
+    fn from_storage(s: Option<String>) -> Self {
+        match s.as_deref() {
+            Some("3") => GridType::Three,
+            Some("2") => GridType::Two,
+            Some("1") => GridType::One,
+            _ => GridType::Auto,
+        }
+    }
+    fn to_storage(self) -> &'static str {
+        match self {
+            GridType::Auto => "auto",
+            GridType::Three => "3",
+            GridType::Two => "2",
+            GridType::One => "1",
+        }
+    }
+    fn col_class(self) -> &'static str {
+        match self {
+            GridType::Auto => {
+                "col-xs-6 col-sm-5 col-md-4 col-lg-3 col-xl-2 col-xxl-1 d-flex justify-content-center"
+            }
+            GridType::Three => "col-4 d-flex justify-content-center",
+            GridType::Two => "col-6 d-flex justify-content-center",
+            GridType::One => "col-12 d-flex justify-content-center",
+        }
+    }
+}
+
 #[function_component(FeedPage)]
 pub fn feed_page() -> Html {
     let posts = use_state(Vec::<ScoredPost>::new);
@@ -29,12 +66,28 @@ pub fn feed_page() -> Html {
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(0.0)
     });
+    let grid = use_state(|| {
+        let stored = window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item("feed_grid_type").ok().flatten());
+        GridType::from_storage(stored)
+    });
 
     {
         let affinity = affinity.clone();
         use_effect_with(*affinity, move |a: &f32| {
             if let Some(store) = window().and_then(|w| w.local_storage().ok().flatten()) {
                 let _ = store.set_item("affinity_threshold", &a.to_string());
+            }
+            || ()
+        });
+    }
+
+    {
+        let grid = grid.clone();
+        use_effect_with(*grid, move |g: &GridType| {
+            if let Some(store) = window().and_then(|w| w.local_storage().ok().flatten()) {
+                let _ = store.set_item("feed_grid_type", g.to_storage());
             }
             || ()
         });
@@ -237,39 +290,92 @@ pub fn feed_page() -> Html {
                 is_loading={is_loading.clone()}
             />
 
-            <label>{"Minimal affinity"}
-                <input
-                    type="number"
-                    class="form-control"
-                    value={affinity.to_string()}
-                    step="0.01"
-                    oninput={{
-                        let affinity = affinity.clone();
-                        Callback::from(move |e: InputEvent| {
-                            if let Some(target) = e.target() {
-                                if let Ok(input) = target.dyn_into::<HtmlInputElement>() {
-                                    if let Ok(v) = input.value().parse::<f32>() {
-                                        affinity.set(v);
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label>{"Minimal affinity"}
+                        <input
+                            type="number"
+                            class="form-control"
+                            value={affinity.to_string()}
+                            step="0.01"
+                            oninput={{
+                                let affinity = affinity.clone();
+                                Callback::from(move |e: InputEvent| {
+                                    if let Some(target) = e.target() {
+                                        if let Ok(input) = target.dyn_into::<HtmlInputElement>() {
+                                            if let Ok(v) = input.value().parse::<f32>() {
+                                                affinity.set(v);
+                                            }
+                                        }
                                     }
-                                }
-                            }
-                        })
-                    }}
-                />
-            </label>
+                                })
+                            }}
+                        />
+                    </label>
+                </div>
 
-            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="col-auto">
+                    <span class="d-block">{"Grid type"}</span>
+                    <div class="btn-group" role="group" aria-label="Grid type">
+                        <button
+                            class={classes!("btn","btn-dark", if *grid == GridType::Auto { "active" } else { "" })}
+                            aria-pressed={(*grid == GridType::Auto).to_string()}
+                            onclick={{
+                                let grid = grid.clone();
+                                Callback::from(move |_| grid.set(GridType::Auto))
+                            }}
+                        >
+                            <i class="bi bi-water"></i>
+                        </button>
+
+                        <button
+                            class={classes!("btn","btn-dark", if *grid == GridType::Three { "active" } else { "" })}
+                            aria-pressed={(*grid == GridType::Three).to_string()}
+                            onclick={{
+                                let grid = grid.clone();
+                                Callback::from(move |_| grid.set(GridType::Three))
+                            }}
+                        >
+                            <i class="bi bi-grid-3x3-gap-fill"></i>
+                        </button>
+
+                        <button
+                            class={classes!("btn","btn-dark", if *grid == GridType::Two { "active" } else { "" })}
+                            aria-pressed={(*grid == GridType::Two).to_string()}
+                            onclick={{
+                                let grid = grid.clone();
+                                Callback::from(move |_| grid.set(GridType::Two))
+                            }}
+                        >
+                            <i class="bi bi-grid-fill"></i>
+                        </button>
+
+                        <button
+                            class={classes!("btn","btn-dark", if *grid == GridType::One { "active" } else { "" })}
+                            aria-pressed={(*grid == GridType::One).to_string()}
+                            onclick={{
+                                let grid = grid.clone();
+                                Callback::from(move |_| grid.set(GridType::One))
+                            }}
+                        >
+                            <i class="bi bi-square-fill"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="position-fixed bottom-0 start-50 translate-middle-x w-100 d-flex justify-content-between z-1">
                 {
                     if let Some(u) = &*selected_user {
-                        html! { <span class="text-muted small">{ format!("User: {} (ID: {})", u.name, u.id) }</span> }
+                        html! { <span class="text-muted small m-3 bg-dark bg-opacity-50 rounded-pill badge">{ format!("User: {} (ID: {})", u.name, u.id) }</span> }
                     } else {
-                        html! { <span class="text-muted small">{ "No user selected" }</span> }
+                        html! { <span class="text-muted small m-3 bg-dark bg-opacity-50 rounded-pill badge">{ "No user selected" }</span> }
                     }
                 }
                 {
                     if !(*is_loading) && (*error).is_none() {
-                        html! { <span class="text-muted small" aria-live="polite">{ format!("Loaded {} posts", posts.len()) }</span> }
-                    } else { html!{} }
+                        html! { <span class="text-muted small m-3 bg-dark bg-opacity-50 rounded-pill badge" aria-live="polite">{ format!("Loaded {} posts", posts.len()) }</span> }
+                    } else { html!{ <span class="text-muted small m-3 bg-dark bg-opacity-50 rounded-pill badge" aria-live="polite">{"Loading..."}</span>} }
                 }
             </div>
 
@@ -303,12 +409,12 @@ pub fn feed_page() -> Html {
                 } else { html!{} }
             }
 
-            <div class="row g-3" aria-busy={(*is_loading).to_string()}>
+            <div class="row g-3 m-3" aria-busy={(*is_loading).to_string()}>
                 {
                     posts.iter().map(|sp| {
                         let sp = sp.clone();
                         html! {
-                            <div key={sp.post.id} class="col-12 col-sm-6 col-md-4 col-lg-3 d-flex">
+                            <div key={sp.post.id} class={ (*grid).col_class() }>
                                 <PostCard affinity={sp.score} post={Rc::new(sp.post)}/>
                             </div>
                         }

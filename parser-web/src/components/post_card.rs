@@ -1,5 +1,7 @@
 use std::rc::Rc;
-use web_sys::window;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
+use web_sys::{Element, window};
 use yew::prelude::*;
 
 use crate::models::*;
@@ -16,7 +18,66 @@ pub struct PostCardProps {
 pub fn post_card(props: &PostCardProps) -> Html {
     let post = &props.post;
 
-    let img_url = preferred_image_url(post.as_ref());
+    let root_ref = use_node_ref();
+    let current_img_url = {
+        let preview = post.preview.clone().unwrap();
+        let url = preview.url.unwrap();
+        let initial = Some(AttrValue::from(url.clone()));
+        use_state(|| initial)
+    };
+
+    let resize_cb = use_mut_ref::<Option<Closure<dyn FnMut(UiEvent)>>, _>(|| None);
+
+    {
+        let root_ref = root_ref.clone();
+        let post = Rc::clone(post);
+        let current_img_url = current_img_url.clone();
+        let resize_cb = resize_cb.clone();
+
+        use_effect_with(post.id, move |_pid| {
+            let choose = {
+                let root_ref = root_ref.clone();
+                let current_img_url = current_img_url.clone();
+                let post = Rc::clone(&post);
+                move |win: &web_sys::Window| {
+                    let dpr = win.device_pixel_ratio();
+                    let required_css_px = root_ref
+                        .cast::<Element>()
+                        .map(|el| el.client_width() as f64)
+                        .unwrap_or(0.0);
+                    let required_device_px = (required_css_px * dpr).ceil() as i64;
+
+                    let new_url = preferred_image_url(post.as_ref(), required_device_px);
+
+                    if *current_img_url != new_url {
+                        current_img_url.set(new_url);
+                    }
+                }
+            };
+
+            if let Some(win) = window() {
+                choose(&win);
+
+                let cb = Closure::wrap(Box::new(move |_: UiEvent| {
+                    if let Some(win) = window() {
+                        choose(&win);
+                    }
+                }) as Box<dyn FnMut(_)>);
+
+                let _ = win.add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
+                *resize_cb.borrow_mut() = Some(cb);
+            }
+
+            move || {
+                if let (Some(win), Some(cb)) = (window(), resize_cb.borrow_mut().take()) {
+                    let _ = win
+                        .remove_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
+                }
+            }
+        });
+    }
+
+    let img_url = (*current_img_url).clone();
 
     let alt_text = {
         let post = Rc::clone(post);
@@ -64,13 +125,19 @@ pub fn post_card(props: &PostCardProps) -> Html {
         })
     };
 
-    let root_classes = classes!("card", "h-100", "overflow-hidden", "cursor-pointer");
+    let root_classes = classes!(
+        "card",
+        "h-100",
+        "overflow-hidden",
+        "cursor-pointer",
+        "w-100"
+    );
 
     let inner: Html = html! {
         <>
-            <div class="position-relative">
+            <div class="position-relative card-body p-0">
                 {
-                    if let Some(url) = img_url.clone() {
+                    if let Some(url) = img_url {
                         html! {
                             <img
                                 class="card-img-top img-fluid"
@@ -114,7 +181,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
                 </span>
             </div>
 
-            <div class="card-body p-2">
+            <div class="card-text p-2">
                 <h6 class="card-title mb-1">{ format!("#{}", post.id) }</h6>
                 {
                     if !post.tags.general.is_empty() {
@@ -135,6 +202,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
         <button
             type="button"
             class={root_classes}
+            ref={root_ref}                               // <-- NEW
             onmousedown={onclick}
             aria-label={format!(
                 "Post {}, rating {:?}, score {}, affinity {}",
@@ -146,13 +214,34 @@ pub fn post_card(props: &PostCardProps) -> Html {
     }
 }
 
-fn preferred_image_url(post: &Post) -> Option<AttrValue> {
-    post.preview
-        .as_ref()
-        .and_then(|p| p.url.clone())
-        .or_else(|| post.sample.as_ref().and_then(|s| s.url.clone()))
-        .or_else(|| post.file.as_ref().and_then(|f| f.url.clone()))
-        .map(AttrValue::from)
+fn preferred_image_url(post: &Post, required_width: i64) -> Option<AttrValue> {
+    let mut candidates: Vec<(AttrValue, i64)> = Vec::new();
+
+    if let Some(p) = post.preview.as_ref() {
+        if let Some(u) = p.url.as_ref() {
+            candidates.push((AttrValue::from(u.clone()), p.width));
+        }
+    }
+    if let Some(s) = post.sample.as_ref() {
+        if let Some(u) = s.url.as_ref() {
+            candidates.push((AttrValue::from(u.clone()), s.width?));
+        }
+    }
+    if let Some(f) = post.file.as_ref() {
+        if let Some(u) = f.url.as_ref() {
+            candidates.push((AttrValue::from(u.clone()), f.width));
+        }
+    }
+
+    candidates.sort_by_key(|&(_, w)| w);
+    if let Some((u, _)) = candidates
+        .iter()
+        .find(|&&(_, w)| w >= required_width)
+        .cloned()
+    {
+        return Some(u);
+    }
+    candidates.last().map(|(u, _)| u.clone())
 }
 
 fn rating_badge_classes(r: &Rating) -> (&'static str, Classes) {

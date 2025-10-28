@@ -6,6 +6,7 @@ use rocket::{State, get};
 use rocket::{futures::lock::Mutex, serde::json::Json};
 use rusqlite::Result;
 use std::collections::{HashMap, HashSet};
+use rocket_cors::AllowedOrigins;
 use tokio::sync::mpsc;
 
 use crate::models::{
@@ -220,6 +221,20 @@ fn openapi_json(spec: &State<OpenApi>) -> Json<OpenApi> {
     Json(spec.inner().clone())
 }
 
+#[cfg(debug_assertions)]
+fn attach_cors(rocket: rocket::Rocket<rocket::Build>) -> rocket::Rocket<rocket::Build> {
+    let cors = rocket_cors::CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all())
+        .to_cors()
+        .expect("Failed to set CORS options");
+    rocket.attach(cors)
+}
+
+#[cfg(not(debug_assertions))]
+fn attach_cors(rocket: rocket::Rocket<rocket::Build>) -> rocket::Rocket<rocket::Build> {
+    rocket
+}
+
 #[launch]
 async fn rocket() -> _ {
     let path = default_path().unwrap();
@@ -238,7 +253,7 @@ async fn rocket() -> _ {
         get_recommendations
     ];
 
-    rocket::build()
+    let r = rocket::build()
         .manage(Mutex::new(watcher))
         .manage(spec)
         .mount("/api", api_routes)
@@ -250,5 +265,7 @@ async fn rocket() -> _ {
                 ..Default::default()
             }),
         )
-        .attach(DbInit)
+        .attach(DbInit);
+
+    attach_cors(r)
 }

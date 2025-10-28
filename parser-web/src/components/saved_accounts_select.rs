@@ -38,15 +38,16 @@ pub fn saved_accounts_select(props: &SavedAccountsProps) -> Html {
             let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
             let idx = select.selected_index() as usize;
 
-            if idx > 0 {
-                if let Some(account) = saved_accounts.get(idx - 1) {
-                    found_user.set(Some(UserInfo {
-                        id: account.id,
-                        name: account.name.clone(),
-                        blacklist: account.blacklist.clone(),
-                    }));
-                    user_query.set(account.name.clone());
-                }
+            if idx == 0 {
+                return;
+            }
+            if let Some(account) = saved_accounts.get(idx - 1) {
+                found_user.set(Some(UserInfo {
+                    id: account.id,
+                    name: account.name.clone(),
+                    blacklist: account.blacklist.clone(),
+                }));
+                user_query.set(account.name.clone());
             }
         })
     };

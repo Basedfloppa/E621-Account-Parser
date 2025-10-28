@@ -45,12 +45,13 @@ pub fn tag_chart_card(props: &TagChartCardProps) -> Html {
     use_effect_with(
         (selected_group.clone(), group_types.clone()),
         |(selected_group, group_types)| {
-            if selected_group.is_empty() || !group_types.contains(&**selected_group) {
-                if let Some(first) = group_types.first() {
-                    selected_group.set(first.clone());
-                }
+            if !selected_group.is_empty() || group_types.contains(&**selected_group) {
+                return;
             }
-            || ()
+
+            if let Some(first) = group_types.first() {
+                selected_group.set(first.clone());
+            }
         },
     );
 
