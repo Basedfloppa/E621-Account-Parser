@@ -16,6 +16,9 @@ A tiny web app for storing personal favorites and generating a personalized post
 [![Repo Size](https://img.shields.io/github/repo-size/Basedfloppa/e621-Account-Parser?style=flat-square)](https://github.com/Basedfloppa/e621-Account-Parser)
 [![Latest Release](https://img.shields.io/github/v/release/Basedfloppa/e621-Account-Parser?display_name=tag&sort=semver&style=flat-square)](https://github.com/Basedfloppa/e621-Account-Parser/releases)
 
+## 💜 NOW LIVE 💜
+At temporary domain https://e621scraper.duckdns.org
+
 ## ✨ Features
 - Save and manage personal favorites
 - Generate a customized feed based on your preferences
