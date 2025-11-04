@@ -47,15 +47,16 @@ posts_domain = "https://uri.com"
 posts_limit = 320 # 320 is max
 rps_delay_ms = 250
 max_retries = 3
-group_weights = [
-    ["artist", 2.0],
-    ["character", 1.5],
-    ["copyright", 1.3],
-    ["species", 1.2],
-    ["general", 1.0],
-    ["meta", 0.4],
-    ["lore", 0.6],
-]
+
+[group_weights]
+'artist' = 2.0
+'character' = 1.5
+'copyright' = 1.3
+'species' = 1.2
+'general' = 1.0
+'meta' = 0.4
+'lore' = 0.6
+
 ```
 
 http://localhost:8080
