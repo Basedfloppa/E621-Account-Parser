@@ -20,8 +20,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
 
     let root_ref = use_node_ref();
     let current_img_url = {
-        let preview = post.preview.clone().unwrap();
-        let url = preview.url.unwrap();
+        let url = fallback_image_url(post);
         let initial = Some(AttrValue::from(url.clone()));
         use_state(|| initial)
     };
@@ -211,6 +210,21 @@ pub fn post_card(props: &PostCardProps) -> Html {
         >
             { inner }
         </button>
+    }
+}
+
+fn fallback_image_url(post: &Post) -> String {
+    if post.preview.is_some() {
+        post.preview.clone().unwrap().url.unwrap()
+    }
+    else if post.sample.is_some() {
+        post.sample.clone().unwrap().url.unwrap()
+    }
+    else if post.file.is_some() {
+        post.file.clone().unwrap().url.unwrap()
+    }
+    else {
+        "".to_string()
     }
 }
 
