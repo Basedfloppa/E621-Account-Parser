@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime};
 use std::{fs, thread};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -15,6 +16,10 @@ pub struct Config {
     pub admin_api: String,
     pub tag_blacklist: Vec<String>,
     pub posts_domain: String,
+    pub posts_limit: i32,
+    pub rps_delay_ms: u64,
+    pub max_retries: u64,
+    pub group_weights: HashMap<String, f32>,
 }
 
 pub struct ConfigWatcher {

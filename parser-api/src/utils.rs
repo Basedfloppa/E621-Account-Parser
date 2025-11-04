@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
-
+use rocket::serde::Deserialize;
 use crate::models::TagCount;
 
+#[derive(Debug, Clone, Deserialize)]
 pub struct Priors {
     pub now: DateTime<Utc>,
     pub recency_tau_days: f32, // e.g., 14.0
@@ -21,7 +22,7 @@ fn sigmoid(x: f32) -> f32 {
 pub fn post_affinity(
     account_tag_counts: &[TagCount],
     post_tags: &[(String, String)],
-    group_wts: &HashMap<&str, f32>,
+    group_wts: &HashMap<String, f32>,
     idf: Option<&HashMap<&str, f32>>,
     priors: Option<(&Priors, i64, i64, DateTime<Utc>)>,
 ) -> f32 {

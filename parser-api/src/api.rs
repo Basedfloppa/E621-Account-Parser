@@ -9,10 +9,6 @@ use crate::{
     models::{Post, PostsApiResponse, TruncatedAccount, UserApiResponse},
 };
 
-pub const LIMIT: i32 = 320;
-const RPS_DELAY_MS: u64 = 250;
-const MAX_RETRIES: usize = 3;
-
 fn build_url(path: &str, params: &[(&str, String)]) -> String {
     let cfg = cfg();
     let url = if params.is_empty() {
@@ -45,17 +41,18 @@ fn get_client() -> Client {
 
 async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, String> {
     let mut delay: Duration = Duration::from_millis(300);
+    let cfg = cfg();
 
-    for attempt in 0..=MAX_RETRIES {
+    for attempt in 0..=cfg.max_retries {
         if let Some(b) = builder.try_clone() {
             match b.build() {
                 Ok(req) => debug!(
                     "HTTP attempt {}/{}: {} {} (rps_delay={}ms)",
                     attempt + 1,
-                    MAX_RETRIES + 1,
+                    cfg.max_retries + 1,
                     req.method(),
                     req.url(),
-                    RPS_DELAY_MS
+                    cfg.rps_delay_ms
                 ),
                 Err(e) => warn!("Could not build request for logging: {e}"),
             }
@@ -66,7 +63,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
             );
         }
 
-        sleep(Duration::from_millis(RPS_DELAY_MS)).await;
+        sleep(Duration::from_millis(cfg.rps_delay_ms)).await;
 
         return match builder
             .try_clone()
@@ -83,7 +80,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                 trace!("HTTP status received: {status}");
 
                 if (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error())
-                    && attempt < MAX_RETRIES
+                    && attempt < cfg.max_retries
                 {
                     let retry_after = resp
                         .headers()
@@ -96,7 +93,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                         retry_after,
                         delay,
                         attempt + 1,
-                        MAX_RETRIES + 1
+                        cfg.max_retries + 1
                     );
                     sleep(delay).await;
                     delay = delay.saturating_mul(2);
@@ -111,11 +108,11 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                 Ok(resp)
             }
             Err(e) => {
-                if attempt < MAX_RETRIES {
+                if attempt < cfg.max_retries {
                     warn!(
                         "Request error on attempt {}/{}: {:?}. Retrying in {:?}",
                         attempt + 1,
-                        MAX_RETRIES + 1,
+                        cfg.max_retries + 1,
                         e,
                         delay
                     );
@@ -123,7 +120,7 @@ async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<Response, S
                     delay = delay.saturating_mul(2);
                     continue;
                 }
-                error!("Request failed after {} attempts: {}", MAX_RETRIES + 1, e);
+                error!("Request failed after {} attempts: {}", cfg.max_retries + 1, e);
                 Err(format!("request failed after retries: {e}"))
             }
         };
@@ -142,7 +139,7 @@ pub async fn get_favorites(account: &TruncatedAccount, page: i32) -> Vec<Post> {
         "favorites.json",
         &[
             ("user_id", account.id.to_string()),
-            ("limit", LIMIT.to_string()),
+            ("limit", cfg.posts_limit.to_string()),
             ("page", page.to_string()),
         ],
     );
@@ -237,7 +234,7 @@ pub async fn get_posts(account: &TruncatedAccount, page: Option<i32>) -> Vec<Pos
     let url = build_url(
         "posts.json",
         &[
-            ("limit", LIMIT.to_string()),
+            ("limit", cfg.posts_limit.to_string()),
             ("page", page.unwrap_or(0).to_string()),
             ("tags", blacklist),
         ],

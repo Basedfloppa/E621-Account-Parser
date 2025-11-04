@@ -7,7 +7,6 @@ use rocket::{futures::lock::Mutex, serde::json::Json};
 use rusqlite::Result;
 use std::collections::{HashMap, HashSet};
 use rocket_cors::AllowedOrigins;
-use tokio::sync::mpsc;
 
 use crate::models::{
     ScoredPost, UserApiResponse, cfg, default_path, reload_from, start_config_watcher,
@@ -28,12 +27,11 @@ mod db;
 mod models;
 mod utils;
 
-const QUEUE_CAP: usize = 10_000;
-
 #[openapi(tag = "Processing")]
 #[post("/process/<account_id>")]
 async fn process_posts(account_id: i32) -> Result<String, String> {
-    let blacklist: HashSet<String> = cfg()
+    let cfg = cfg();
+    let blacklist: HashSet<String> = cfg
         .tag_blacklist
         .iter()
         .map(|s| s.to_lowercase())
@@ -44,7 +42,7 @@ async fn process_posts(account_id: i32) -> Result<String, String> {
         UserApiResponse::FullCurrentUser(u) => u.favorite_count,
         UserApiResponse::FullUser(u) => u.favorite_count,
     };
-    let pages = (favcount / api::LIMIT) + (if favcount % api::LIMIT > 0 { 1 } else { 0 });
+    let pages = (favcount / cfg.posts_limit) + (if favcount % cfg.posts_limit > 0 { 1 } else { 0 });
 
     db::drop_account_posts(account_id).map_err(|e| format!("Failed to drop account posts: {e}"))?;
 
@@ -139,15 +137,7 @@ async fn get_recommendations(
     page: Option<i32>,
     affinity_threshold: Option<f32>,
 ) -> Result<Json<Vec<ScoredPost>>, std::io::Error> {
-    let group_weights = HashMap::from([
-        ("artist", 2.0),
-        ("character", 1.5),
-        ("copyright", 1.3),
-        ("species", 1.2),
-        ("general", 1.0),
-        ("meta", 0.4),
-        ("lore", 0.6),
-    ]);
+    let cfg = cfg();
     let priors = Priors {
         now: Utc::now(),
         recency_tau_days: 14.0,
@@ -198,7 +188,7 @@ async fn get_recommendations(
         let s = utils::post_affinity(
             &tags,
             &post_tags,
-            &group_weights,
+            &cfg.group_weights,
             idf.as_ref(),
             Some((&priors, score_total, fav_count, created_at)),
         );
@@ -240,7 +230,6 @@ async fn rocket() -> _ {
     let path = default_path().unwrap();
     let _ = reload_from(&path);
     let watcher = start_config_watcher(path).unwrap();
-    let (_tx, _rx) = mpsc::channel::<Vec<String>>(QUEUE_CAP);
 
     let settings = OpenApiSettings::new();
     let (api_routes, spec) = openapi_get_routes_spec![
