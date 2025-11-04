@@ -134,7 +134,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
 
     let inner: Html = html! {
         <>
-            <div class="position-relative card-body p-0">
+            <div class="position-relative card-body p-0" style="min-width: 400px">
                 {
                     if let Some(url) = img_url {
                         html! {
