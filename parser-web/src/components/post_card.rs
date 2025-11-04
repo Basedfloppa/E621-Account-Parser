@@ -1,7 +1,7 @@
 use std::rc::Rc;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
-use web_sys::{Element, window};
+use wasm_bindgen::JsCast;
+use web_sys::{window, Element, ResizeObserver, ResizeObserverEntry};
 use yew::prelude::*;
 
 use crate::models::*;
@@ -25,27 +25,32 @@ pub fn post_card(props: &PostCardProps) -> Html {
         use_state(|| initial)
     };
 
-    let resize_cb = use_mut_ref::<Option<Closure<dyn FnMut(UiEvent)>>, _>(|| None);
+    let ro_handle = use_mut_ref::<
+        Option<(ResizeObserver, Closure<dyn FnMut(web_sys::js_sys::Array, ResizeObserver)>)>
+        , _>(|| None);
 
     {
         let root_ref = root_ref.clone();
         let post = Rc::clone(post);
         let current_img_url = current_img_url.clone();
-        let resize_cb = resize_cb.clone();
+        let ro_handle = ro_handle.clone();
 
         use_effect_with(post.id, move |_pid| {
             let choose = {
                 let root_ref = root_ref.clone();
-                let current_img_url = current_img_url.clone();
                 let post = Rc::clone(&post);
-                move |win: &web_sys::Window| {
+                let current_img_url = current_img_url.clone();
+
+                move || {
+                    let Some(win) = window() else { return; };
                     let dpr = win.device_pixel_ratio();
+
                     let required_css_px = root_ref
                         .cast::<Element>()
                         .map(|el| el.client_width() as f64)
                         .unwrap_or(0.0);
-                    let required_device_px = (required_css_px * dpr).ceil() as i64;
 
+                    let required_device_px = (required_css_px * dpr).ceil() as i64;
                     let new_url = preferred_image_url(post.as_ref(), required_device_px);
 
                     if *current_img_url != new_url {
@@ -54,23 +59,54 @@ pub fn post_card(props: &PostCardProps) -> Html {
                 }
             };
 
-            if let Some(win) = window() {
-                choose(&win);
+            if let Some(el) = root_ref.cast::<Element>() {
+                let cb = {
+                    let current_img_url = current_img_url.clone();
+                    let post = Rc::clone(&post);
+                    let root_ref = root_ref.clone();
 
-                let cb = Closure::wrap(Box::new(move |_: UiEvent| {
-                    if let Some(win) = window() {
-                        choose(&win);
-                    }
-                }) as Box<dyn FnMut(_)>);
+                    Closure::wrap(Box::new(move |entries: web_sys::js_sys::Array, _obs: ResizeObserver| {
+                        if let Some(entry) = entries.get(0).dyn_ref::<ResizeObserverEntry>() {
+                            let Some(win) = window() else { return; };
+                            let dpr = win.device_pixel_ratio();
 
-                let _ = win.add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
-                *resize_cb.borrow_mut() = Some(cb);
+                            let css_w = entry.content_rect().width();
+                            let required_device_px = (css_w * dpr).ceil() as i64;
+
+                            let new_url =
+                                preferred_image_url(post.as_ref(), required_device_px);
+
+                            if *current_img_url != new_url {
+                                current_img_url.set(new_url);
+                            }
+                        } else {
+                            let Some(win) = window() else { return; };
+                            let dpr = win.device_pixel_ratio();
+                            let required_css_px = root_ref
+                                .cast::<Element>()
+                                .map(|el| el.client_width() as f64)
+                                .unwrap_or(0.0);
+                            let required_device_px = (required_css_px * dpr).ceil() as i64;
+                            let new_url = preferred_image_url(post.as_ref(), required_device_px);
+                            if *current_img_url != new_url {
+                                current_img_url.set(new_url);
+                            }
+                        }
+                    }) as Box<dyn FnMut(web_sys::js_sys::Array, ResizeObserver)>)
+                };
+
+                let ro = ResizeObserver::new(cb.as_ref().unchecked_ref())
+                    .expect("create ResizeObserver");
+                ro.observe(&el);
+
+                *ro_handle.borrow_mut() = Some((ro, cb));
+
+                choose();
             }
 
             move || {
-                if let (Some(win), Some(cb)) = (window(), resize_cb.borrow_mut().take()) {
-                    let _ = win
-                        .remove_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
+                if let Some((ro, _cb)) = ro_handle.borrow_mut().take() {
+                    ro.disconnect();
                 }
             }
         });
@@ -214,13 +250,13 @@ pub fn post_card(props: &PostCardProps) -> Html {
 }
 
 fn fallback_image_url(post: &Post) -> String {
-    if post.preview.is_some() {
+    if post.preview.clone().unwrap().url.is_some() {
         post.preview.clone().unwrap().url.unwrap()
     }
-    else if post.sample.is_some() {
+    else if post.sample.clone().unwrap().url.is_some() {
         post.sample.clone().unwrap().url.unwrap()
     }
-    else if post.file.is_some() {
+    else if post.file.clone().unwrap().url.is_some() {
         post.file.clone().unwrap().url.unwrap()
     }
     else {
@@ -231,20 +267,20 @@ fn fallback_image_url(post: &Post) -> String {
 fn preferred_image_url(post: &Post, required_width: i64) -> Option<AttrValue> {
     let mut candidates: Vec<(AttrValue, i64)> = Vec::new();
 
-    if let Some(p) = post.preview.as_ref() {
-        if let Some(u) = p.url.as_ref() {
-            candidates.push((AttrValue::from(u.clone()), p.width));
-        }
+    if post.preview.clone()?.url.is_some() {
+        candidates.push((AttrValue::from(
+            post.preview.clone()?.url?.clone()),
+            post.preview.clone()?.width));
     }
-    if let Some(s) = post.sample.as_ref() {
-        if let Some(u) = s.url.as_ref() {
-            candidates.push((AttrValue::from(u.clone()), s.width?));
-        }
+    if post.sample.clone()?.url.is_some() {
+        candidates.push((AttrValue::from(
+            post.sample.clone()?.url?.clone()),
+            post.sample.clone()?.width?));
     }
-    if let Some(f) = post.file.as_ref() {
-        if let Some(u) = f.url.as_ref() {
-            candidates.push((AttrValue::from(u.clone()), f.width));
-        }
+    if post.file.clone()?.url.is_some() {
+        candidates.push((AttrValue::from(
+            post.file.clone()?.url?.clone()),
+            post.file.clone()?.width));
     }
 
     candidates.sort_by_key(|&(_, w)| w);

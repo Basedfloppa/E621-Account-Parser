@@ -382,7 +382,7 @@ pub fn feed_page() -> Html {
             {
                 if let Some(err) = &*error {
                     html! {
-                        <div class="alert alert-danger d-flex justify-content-between align-items-center" style="min-width: 400px" role="alert" aria-live="polite">
+                        <div class="alert alert-danger d-flex justify-content-between align-items-center" role="alert" aria-live="polite">
                             <span>{ err }</span>
                             <button
                                 class="btn btn-sm btn-outline-light"
@@ -414,7 +414,7 @@ pub fn feed_page() -> Html {
                     posts.iter().map(|sp| {
                         let sp = sp.clone();
                         html! {
-                            <div key={sp.post.id} class={ (*grid).col_class() }>
+                            <div key={sp.post.id} class={ (*grid).col_class() } style="min-width: 200px">
                                 <PostCard affinity={sp.score} post={Rc::new(sp.post)}/>
                             </div>
                         }
