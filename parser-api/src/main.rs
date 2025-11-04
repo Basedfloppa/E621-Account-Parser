@@ -138,15 +138,9 @@ async fn get_recommendations(
     affinity_threshold: Option<f32>,
 ) -> Result<Json<Vec<ScoredPost>>, std::io::Error> {
     let cfg = cfg();
-    let priors = Priors {
-        now: Utc::now(),
-        recency_tau_days: 14.0,
-        quality_a: 0.01,
-        quality_b: 0.001,
-        mix_sim: 0.7,
-        mix_quality: 0.2,
-        mix_recency: 0.1,
-    };
+
+    let mut priors = cfg.priors.clone();
+    priors.now = Utc::now();
 
     let tags: Vec<TagCount> = get_tag_counts(account_id)
         .map_err(|e| std::io::Error::other(format!("Failed to get tag counts: {e}")))?

@@ -9,6 +9,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime};
 use std::{fs, thread};
 use std::collections::HashMap;
+use crate::utils::Priors;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -20,6 +21,7 @@ pub struct Config {
     pub rps_delay_ms: u64,
     pub max_retries: u64,
     pub group_weights: HashMap<String, f32>,
+    pub priors: Priors,
 }
 
 pub struct ConfigWatcher {

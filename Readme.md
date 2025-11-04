@@ -41,7 +41,7 @@ cargo install --locked trunk
 
 ## Backend
 
-./config.toml ****
+./config.toml
 ```toml
 admin_user = "username"
 admin_api = "api_key"
@@ -60,6 +60,14 @@ max_retries = 3
 'meta' = 0.4
 'lore' = 0.6
 
+[priors]
+now = "2000-1-01T12:00:00Z" # dummy value, will be replaced with current date
+recency_tau_days = 14.0
+quality_a = 0.01
+quality_b = 0.001
+mix_sim = 0.7
+mix_quality = 0.2
+mix_recency = 0.1
 ```
 
 http://localhost:8080
