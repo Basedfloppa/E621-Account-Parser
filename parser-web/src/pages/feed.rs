@@ -382,7 +382,7 @@ pub fn feed_page() -> Html {
             {
                 if let Some(err) = &*error {
                     html! {
-                        <div class="alert alert-danger d-flex justify-content-between align-items-center" role="alert" aria-live="polite">
+                        <div class="alert alert-danger d-flex justify-content-between align-items-center" style="min-width: 400px" role="alert" aria-live="polite">
                             <span>{ err }</span>
                             <button
                                 class="btn btn-sm btn-outline-light"

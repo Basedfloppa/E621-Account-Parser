@@ -134,7 +134,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
 
     let inner: Html = html! {
         <>
-            <div class="position-relative card-body p-0" style="min-width: 400px">
+            <div class="position-relative card-body p-0">
                 {
                     if let Some(url) = img_url {
                         html! {
@@ -201,7 +201,7 @@ pub fn post_card(props: &PostCardProps) -> Html {
         <button
             type="button"
             class={root_classes}
-            ref={root_ref}                               // <-- NEW
+            ref={root_ref}
             onmousedown={onclick}
             aria-label={format!(
                 "Post {}, rating {:?}, score {}, affinity {}",
