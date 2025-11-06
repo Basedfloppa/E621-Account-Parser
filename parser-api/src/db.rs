@@ -7,6 +7,7 @@ use rocket::{
 use rusqlite::{Connection, Result, params};
 use std::{collections::HashSet, fs};
 use std::collections::HashMap;
+use rusqlite::fallible_streaming_iterator::FallibleStreamingIterator;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -396,13 +397,9 @@ pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Res
 }
 
 pub fn post_count() -> i64 {
-    let conn = open_db().unwrap();
-    let mut stmt = conn
-        .prepare("select count(*) from posts")
-        .map_err(|e| format!("Failed to construct query: {e}")).unwrap();
-
-    let counts = stmt.execute([]).map_err(|e| format!("sql: {e}")).unwrap();
-    counts as i64
+    let conn = open_db().expect("open_db failed");
+    conn.query_row("SELECT COUNT(*) FROM posts", [], |row| row.get::<_, i64>(0))
+        .expect("COUNT(*) query failed")
 }
 
 pub fn get_tags_df() -> Result<HashMap<String, i64>> {
