@@ -249,14 +249,20 @@ pub fn post_card(props: &PostCardProps) -> Html {
     }
 }
 
+fn is_supported_image(url: &str) -> bool {
+    const ALLOWED: [&str; 7] = [".gif", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".apng"];
+
+    ALLOWED.iter().any(|ext| url.to_ascii_lowercase().ends_with(ext))
+}
+
 fn fallback_image_url(post: &Post) -> String {
-    if post.preview.clone().unwrap().url.is_some() {
+    if post.preview.clone().unwrap().url.is_some() && is_supported_image(&post.preview.clone().unwrap().url.unwrap()) {
         post.preview.clone().unwrap().url.unwrap()
     }
-    else if post.sample.clone().unwrap().url.is_some() {
+    else if post.sample.clone().unwrap().url.is_some() && is_supported_image(&post.sample.clone().unwrap().url.unwrap()) {
         post.sample.clone().unwrap().url.unwrap()
     }
-    else if post.file.clone().unwrap().url.is_some() {
+    else if post.file.clone().unwrap().url.is_some() && is_supported_image(&post.file.clone().unwrap().url.unwrap()) {
         post.file.clone().unwrap().url.unwrap()
     }
     else {
@@ -267,17 +273,17 @@ fn fallback_image_url(post: &Post) -> String {
 fn preferred_image_url(post: &Post, required_width: i64) -> Option<AttrValue> {
     let mut candidates: Vec<(AttrValue, i64)> = Vec::new();
 
-    if post.preview.clone()?.url.is_some() {
+    if post.preview.clone()?.url.is_some() && is_supported_image(&post.preview.clone().unwrap().url.unwrap()) {
         candidates.push((AttrValue::from(
             post.preview.clone()?.url?.clone()),
             post.preview.clone()?.width));
     }
-    if post.sample.clone()?.url.is_some() {
+    if post.sample.clone()?.url.is_some() && is_supported_image(&post.sample.clone().unwrap().url.unwrap()) {
         candidates.push((AttrValue::from(
             post.sample.clone()?.url?.clone()),
             post.sample.clone()?.width?));
     }
-    if post.file.clone()?.url.is_some() {
+    if post.file.clone()?.url.is_some() && is_supported_image(&post.file.clone().unwrap().url.unwrap()) {
         candidates.push((AttrValue::from(
             post.file.clone()?.url?.clone()),
             post.file.clone()?.width));
