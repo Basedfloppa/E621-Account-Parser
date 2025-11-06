@@ -50,6 +50,8 @@ posts_domain = "https://uri.com"
 posts_limit = 320 # 320 is max
 rps_delay_ms = 250
 max_retries = 3
+df_floor = 8.0
+idf_max = 6.0
 
 [group_weights]
 'artist' = 2.0
@@ -68,6 +70,8 @@ quality_b = 0.001
 mix_sim = 0.7
 mix_quality = 0.2
 mix_recency = 0.1
+idf_lambda = 0.4
+idf_alpha = 0.5
 ```
 
 http://localhost:8080

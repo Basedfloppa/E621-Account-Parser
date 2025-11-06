@@ -22,6 +22,8 @@ pub struct Config {
     pub max_retries: u64,
     pub group_weights: HashMap<String, f32>,
     pub priors: Priors,
+    pub df_floor: f32,
+    pub idf_max: f32
 }
 
 pub struct ConfigWatcher {
