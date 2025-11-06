@@ -5,7 +5,7 @@ use chrono::Utc;
 use rocket::{State, get};
 use rocket::{futures::lock::Mutex, serde::json::Json};
 use rusqlite::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use rocket_cors::AllowedOrigins;
 
 use crate::models::{
@@ -16,11 +16,11 @@ use crate::{
         DbInit, get_account_by_id, get_account_by_name, get_tag_counts, set_account, set_tag_counts,
     },
     models::{Post, TagCount, TruncatedAccount},
-    rocket::serde::json,
-    utils::Priors,
+    rocket::serde::json
 };
 use rocket_okapi::okapi::openapi3::OpenApi;
 use rocket_okapi::{openapi, openapi_get_routes_spec, settings::OpenApiSettings, swagger_ui::*};
+use crate::utils::IdfIndex;
 
 mod api;
 mod db;
@@ -154,11 +154,13 @@ async fn get_recommendations(
     for post in posts {
         let tmp_post = post.clone();
 
+        let idf = IdfIndex::from_db(db::get_tags_df, db::post_count, priors.now).unwrap();
         let s = utils::post_affinity(
             &tags,
             &post,
             &cfg.group_weights,
             &priors,
+            &idf
         );
 
         scored.push(ScoredPost {

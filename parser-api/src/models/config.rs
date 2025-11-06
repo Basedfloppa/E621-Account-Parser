@@ -9,7 +9,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime};
 use std::{fs, thread};
 use std::collections::HashMap;
-use crate::utils::Priors;
+use crate::utils::{Priors};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {

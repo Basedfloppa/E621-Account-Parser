@@ -6,6 +6,7 @@ use rocket::{
 };
 use rusqlite::{Connection, Result, params};
 use std::{collections::HashSet, fs};
+use std::collections::HashMap;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -351,6 +352,9 @@ pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Res
         let mut link = tx
             .prepare_cached("INSERT OR IGNORE INTO tags_posts(tag_id, post_id) VALUES (?1, ?2)")
             .map_err(|e| format!("prep link: {e}"))?;
+        let mut df = tx
+            .prepare_cached("UPDATE tags SET df = (SELECT count(*) FROM tags_posts WHERE tag_id = ?1) WHERE id = ?1;")
+            .map_err(|e| format!("prep df: {e}"))?;
 
         for post in posts {
             for (group, tags) in [
@@ -378,6 +382,9 @@ pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Res
 
                     link.execute(params![tag_id, pid])
                         .map_err(|e| format!("link tag_id={tag_id} post_id={pid}: {e}"))?;
+
+                    df.execute(params![tag_id])
+                        .map_err(|e| format!("insert tag df: {e}"))?;
                 }
             }
         }
@@ -386,4 +393,31 @@ pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Res
     tx.commit()
         .map_err(|e| format!("commit save_posts_tags_batch: {e}"))?;
     Ok(())
+}
+
+pub fn post_count() -> i64 {
+    let conn = open_db().unwrap();
+    let mut stmt = conn
+        .prepare("select count(*) from posts")
+        .map_err(|e| format!("Failed to construct query: {e}")).unwrap();
+
+    let counts = stmt.execute([]).map_err(|e| format!("sql: {e}")).unwrap();
+    counts as i64
+}
+
+pub fn get_tags_df() -> Result<HashMap<String, i64>> {
+    let conn = open_db().unwrap();
+    let mut stmt = conn.prepare("SELECT name, df FROM tags")?;
+
+    let mut map = HashMap::new();
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+
+    for pair in rows {
+        let (name, df) = pair?;
+        map.insert(name, df);
+    }
+
+    Ok(map)
 }
