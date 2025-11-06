@@ -150,41 +150,15 @@ async fn get_recommendations(
         .map_err(|e| std::io::Error::other(format!("Failed to get account: {e}")))?;
     let posts: Vec<Post> = api::get_posts(&account, page).await;
 
-    let idf: Option<HashMap<&str, f32>> = None;
-
     let mut scored: Vec<ScoredPost> = Vec::with_capacity(posts.len());
     for post in posts {
-        let mut post_tags: Vec<(String, String)> = Vec::new();
         let tmp_post = post.clone();
-
-        post_tags.extend(post.tags.artist.into_iter().map(|t| (t, "artist".into())));
-        post_tags.extend(
-            post.tags
-                .character
-                .into_iter()
-                .map(|t| (t, "character".into())),
-        );
-        post_tags.extend(
-            post.tags
-                .copyright
-                .into_iter()
-                .map(|t| (t, "copyright".into())),
-        );
-        post_tags.extend(post.tags.general.into_iter().map(|t| (t, "general".into())));
-        post_tags.extend(post.tags.lore.into_iter().map(|t| (t, "lore".into())));
-        post_tags.extend(post.tags.meta.into_iter().map(|t| (t, "meta".into())));
-        post_tags.extend(post.tags.species.into_iter().map(|t| (t, "species".into())));
-
-        let score_total: i64 = tmp_post.score.total;
-        let fav_count: i64 = tmp_post.fav_count;
-        let created_at = tmp_post.created_at;
 
         let s = utils::post_affinity(
             &tags,
-            &post_tags,
+            &post,
             &cfg.group_weights,
-            idf.as_ref(),
-            Some((&priors, score_total, fav_count, created_at)),
+            &priors,
         );
 
         scored.push(ScoredPost {
