@@ -364,7 +364,6 @@ pub fn save_posts_tags_batch(posts: &[Post], blacklist: &HashSet<String>) -> Res
                 ("copyright", &post.tags.copyright),
                 ("general", &post.tags.general),
                 ("lore", &post.tags.lore),
-                ("meta", &post.tags.meta),
                 ("species", &post.tags.species),
             ] {
                 let pid = post.id;
