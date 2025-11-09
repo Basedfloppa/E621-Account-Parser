@@ -15,6 +15,7 @@ pub struct Priors {
     pub mix_recency: f32,
     pub idf_lambda: Option<f32>,
     pub idf_alpha:  Option<f32>,
+    pub freq_alpha: f32,
 }
 
 #[inline]
@@ -47,7 +48,7 @@ pub fn post_affinity(
         let g = *group_wts_hash.get(t.group_type.as_str()).unwrap_or(&1.0);
         let tlc = t.name.to_lowercase();
         let idf_w = idf.idf_tempered(&tlc, lambda, alpha);
-        let w = (t.count as f32).ln_1p() * g * idf_w;
+        let w = (t.count as f32).powf(priors.freq_alpha) * g * idf_w;
         if w > 0.0 {
             let key = format!("{}|{}", t.group_type, tlc);
             let e = user.entry(key).or_insert(0.0);

@@ -50,8 +50,8 @@ posts_domain = "https://uri.com"
 posts_limit = 320 # 320 is max
 rps_delay_ms = 250
 max_retries = 3
-df_floor = 8.0
-idf_max = 6.0
+df_floor = 0.7
+idf_max = 100.0
 
 [group_weights]
 'artist' = 2.0
@@ -65,14 +65,31 @@ idf_max = 6.0
 [priors]
 now = "2000-1-01T12:00:00Z" # dummy value, will be replaced with current date
 recency_tau_days = 14.0
-quality_a = 0.01
-quality_b = 0.001
-mix_sim = 0.7
-mix_quality = 0.2
-mix_recency = 0.1
-idf_lambda = 0.4
-idf_alpha = 0.5
+quality_a = 0.00
+quality_b = 0.00
+mix_sim = 1.0
+mix_quality = 0.0
+mix_recency = 0.0
+idf_lambda = 0.0
+idf_alpha = 1.0
+freq_alpha = 0.5
 ```
+
+Small guide on scoring vars
+
+|Variable|Lower →|Higher →|
+|---|---|---|
+|`df_floor`|rarer tags hit harder (risk: spiky)|rarer tags toned down (stable)|
+|`idf_max`|compress extremes|allow rarities to dominate more|
+|`idf_lambda`|blend IDF toward 1 (flatter)|keep raw IDF contrast (sharper)|
+|`idf_alpha`|stronger compression (flatter)|less compression (sharper)|
+|`freq_alpha`|downplay frequency (treat counts similarly; more diversity)|amplify frequent tags (favorites dominate; less diversity)|
+|`quality_a`|score_total matters less|score_total matters more|
+|`quality_b`|fav_count matters less|fav_count matters more|
+|`recency_tau_days`|faster decay (newer wins)|slower decay (older survives)|
+|`mix_sim`|personalization weaker|personalization stronger|
+|`mix_quality`|quality matters less|quality matters more|
+|`mix_recency`|freshness matters less|freshness matters more|
 
 http://localhost:8080
 
