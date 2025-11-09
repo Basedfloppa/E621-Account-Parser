@@ -12,14 +12,14 @@ use crate::{
 fn build_url(path: &str, params: &[(&str, String)]) -> String {
     let cfg = cfg();
     let url = if params.is_empty() {
-        format!("{}{path}", cfg.posts_domain)
+        format!("{}/{path}", cfg.posts_domain)
     } else {
         let qs = params
             .iter()
             .map(|(k, v)| format!("{k}={}", encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        format!("{}{path}?{qs}", cfg.posts_domain)
+        format!("{}/{path}?{qs}", cfg.posts_domain)
     };
     trace!("build_url: path={path} -> {url}");
     url
@@ -202,7 +202,7 @@ pub async fn get_account(account: &TruncatedAccount) -> UserApiResponse {
     );
     let cfg = cfg();
     let client = get_client();
-    let url = format!("{}users/{}.json", cfg.posts_domain, account.id);
+    let url = format!("{}/users/{}.json", cfg.posts_domain, account.id);
     debug!("GET (auth) {url}");
     let resp = send_with_retry(
         client
