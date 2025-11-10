@@ -285,13 +285,15 @@ pub fn feed_page() -> Html {
         <div class="container my-4 gap-2">
             <h2 class="mb-3">{ "Latest Posts" }</h2>
 
-            <SavedAccountsSelect
-                selected_user={selected_user.clone()}
-                is_loading={is_loading.clone()}
-            />
+            <div id="feed-account">
+                <SavedAccountsSelect
+                    selected_user={selected_user.clone()}
+                    is_loading={is_loading.clone()}
+                />
+            </div>
 
             <div class="row g-3 align-items-center">
-                <div class="col-auto">
+                <div class="col-auto" id="feed-affinity">
                     <label>{"Minimal affinity"}
                         <input
                             type="number"
@@ -314,7 +316,7 @@ pub fn feed_page() -> Html {
                     </label>
                 </div>
 
-                <div class="col-auto">
+                <div class="col-auto" id="feed-grid">
                     <span class="d-block">{"Grid type"}</span>
                     <div class="btn-group" role="group" aria-label="Grid type">
                         <button

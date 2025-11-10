@@ -36,30 +36,34 @@ pub fn home_page() -> Html {
                             <div class="card-body">
                                 <h1 class="card-title text-center mb-4">{"e621 Tag Analyzer"}</h1>
 
-                                <SavedAccountsSelect
-                                    selected_user={selected_user.clone()}
-                                    is_loading={is_loading.clone()}
-                                />
+                                <div id="home-account">
+                                    <SavedAccountsSelect
+                                        selected_user={selected_user.clone()}
+                                        is_loading={is_loading.clone()}
+                                    />
 
-                                <UserSearchForm
-                                    found_user={selected_user.clone()}
-                                    error={error.clone()}
-                                    api_base={cfg.backend_domain.clone()}
-                                    is_loading={is_loading.clone()}
-                                />
+                                    <UserSearchForm
+                                        found_user={selected_user.clone()}
+                                        error={error.clone()}
+                                        api_base={cfg.backend_domain.clone()}
+                                        is_loading={is_loading.clone()}
+                                    />
+                                </div>
 
                                 <UserInfoAlert
                                     user={selected_user.clone()}
                                     error={error.clone()}
                                 />
 
-                                <FetchAnalyzeButton
-                                    tag_count={tag_counts.clone()}
-                                    found_user={selected_user.clone()}
-                                    error={error.clone()}
-                                    api_base={cfg.backend_domain.clone()}
-                                    is_loading={is_loading.clone()}
-                                />
+                                <div id="home-analyzer">
+                                    <FetchAnalyzeButton
+                                        tag_count={tag_counts.clone()}
+                                        found_user={selected_user.clone()}
+                                        error={error.clone()}
+                                        api_base={cfg.backend_domain.clone()}
+                                        is_loading={is_loading.clone()}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
